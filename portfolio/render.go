@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	tw "github.com/olekukonko/tablewriter"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	"github.com/tsiemens/acb/util"
 )
@@ -29,10 +31,11 @@ func NaNString() string {
 }
 
 func (h PrintHelper) CurrStr(val float64) string {
+	p := message.NewPrinter(language.English)
 	if h.PrintAllDecimals {
-		return fmt.Sprintf("%f", val)
+		return p.Sprintf("%f", val)
 	}
-	return fmt.Sprintf("%.2f", val)
+	return p.Sprintf("%.2f", val)
 }
 
 func (h PrintHelper) DollarStr(val float64) string {
