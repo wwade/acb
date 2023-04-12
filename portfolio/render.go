@@ -12,7 +12,7 @@ import (
 	"github.com/tsiemens/acb/util"
 )
 
-type _PrintHelper struct {
+type PrintHelper struct {
 	PrintAllDecimals bool
 }
 
@@ -28,21 +28,21 @@ func NaNString() string {
 	return "NaN"
 }
 
-func (h _PrintHelper) CurrStr(val float64) string {
+func (h PrintHelper) CurrStr(val float64) string {
 	if h.PrintAllDecimals {
 		return fmt.Sprintf("%f", val)
 	}
 	return fmt.Sprintf("%.2f", val)
 }
 
-func (h _PrintHelper) DollarStr(val float64) string {
+func (h PrintHelper) DollarStr(val float64) string {
 	if math.IsNaN(val) {
 		return NaNString()
 	}
 	return "$" + h.CurrStr(val)
 }
 
-func (h _PrintHelper) CurrWithFxStr(val float64, curr Currency, rateToLocal float64) string {
+func (h PrintHelper) CurrWithFxStr(val float64, curr Currency, rateToLocal float64) string {
 	if curr == DEFAULT_CURRENCY {
 		return h.DollarStr(val)
 	}
@@ -56,7 +56,7 @@ func strOrDash(useStr bool, str string) string {
 	return "-"
 }
 
-func (h _PrintHelper) PlusMinusDollar(val float64, showPlus bool) string {
+func (h PrintHelper) PlusMinusDollar(val float64, showPlus bool) string {
 	if math.IsNaN(val) {
 		return NaNString()
 	}
@@ -86,7 +86,7 @@ func RenderTxTableModel(
 		"Affiliate", "Memo",
 	}
 
-	ph := _PrintHelper{PrintAllDecimals: renderFullDollarValues}
+	ph := PrintHelper{PrintAllDecimals: renderFullDollarValues}
 
 	sawSuperficialLoss := false
 	sawOverAppliedSfl := false
@@ -184,32 +184,40 @@ func RenderTxTableModel(
 	return table
 }
 
-/*
-  Generates a RenderTable that will render out to this:
-  | Year             | Capital Gains |
-  +------------------+---------------+
-  | 2000             | xxxx.xx       |
-  | 2001             | xxxx.xx       |
-  | Since inception  | xxxx.xx       |
-*/
+// RenderAggregateCapitalGains generates a RenderTable that will render out to this:
+//
+//	| Year             | Capital Gains | Gross Income |
+//	+------------------+---------------+--------------|
+//	| 2000             | xxxx.xx       | xxxx.xx      |
+//	| 2001             | xxxx.xx       | xxxx.xx      |
+//	| Since inception  | xxxx.xx       | xxxx.xx      |
 func RenderAggregateCapitalGains(
 	gains *CumulativeCapitalGains, renderFullDollarValues bool) *RenderTable {
 
 	table := &RenderTable{}
-	table.Header = []string{"Year", "Capital Gains"}
+	table.Header = []string{"Year", "Capital Gains", "Gross Income"}
 
-	ph := _PrintHelper{PrintAllDecimals: renderFullDollarValues}
+	ph := PrintHelper{PrintAllDecimals: renderFullDollarValues}
 
 	years := gains.CapitalGainsYearTotalsKeysSorted()
 	for _, year := range years {
 		yearlyTotal := gains.CapitalGainsYearTotals[year]
+		gross := gains.GrossIncomeByYear[year]
 		table.Rows = append(
 			table.Rows,
-			[]string{fmt.Sprintf("%d", year), ph.PlusMinusDollar(yearlyTotal, false)})
+			[]string{
+				fmt.Sprintf("%d", year),
+				ph.PlusMinusDollar(yearlyTotal, false),
+				ph.DollarStr(gross),
+			})
 	}
 	table.Rows = append(
 		table.Rows,
-		[]string{"Since inception", ph.PlusMinusDollar(gains.CapitalGainsTotal, false)})
+		[]string{
+			"Since inception",
+			ph.PlusMinusDollar(gains.CapitalGainsTotal, false),
+			ph.DollarStr(gains.GrossIncomeTotal),
+		})
 
 	return table
 }

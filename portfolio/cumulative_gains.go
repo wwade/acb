@@ -7,9 +7,16 @@ import (
 	"github.com/tsiemens/acb/util"
 )
 
+type Stat struct {
+	Total      float64
+	YearTotals map[int]float64
+}
+
 type CumulativeCapitalGains struct {
 	CapitalGainsTotal      float64
 	CapitalGainsYearTotals map[int]float64
+	GrossIncomeTotal       float64
+	GrossIncomeByYear      map[int]float64
 }
 
 func (g *CumulativeCapitalGains) CapitalGainsYearTotalsKeysSorted() []int {
@@ -19,31 +26,35 @@ func (g *CumulativeCapitalGains) CapitalGainsYearTotalsKeysSorted() []int {
 }
 
 func CalcSecurityCumulativeCapitalGains(deltas []*TxDelta) *CumulativeCapitalGains {
-	var capGainsTotal float64 = 0.0
-	capGainsYearTotals := util.NewDefaultMap[int, float64](func(_ int) float64 { return 0.0 })
-
+	cc := &CumulativeCapitalGains{
+		CapitalGainsYearTotals: map[int]float64{},
+		GrossIncomeByYear:      map[int]float64{},
+	}
 	for _, d := range deltas {
 		if !math.IsNaN(d.CapitalGain) {
-			capGainsTotal += d.CapitalGain
-			yearTotalSoFar := capGainsYearTotals.Get(d.Tx.SettlementDate.Year())
-			capGainsYearTotals.Set(d.Tx.SettlementDate.Year(), yearTotalSoFar+d.CapitalGain)
+			cc.CapitalGainsTotal += d.CapitalGain
+			cc.CapitalGainsYearTotals[d.Tx.SettlementDate.Year()] += d.CapitalGain
+			cc.GrossIncomeTotal += d.GrossIncome
+			cc.GrossIncomeByYear[d.Tx.SettlementDate.Year()] += d.GrossIncome
 		}
 	}
-
-	return &CumulativeCapitalGains{capGainsTotal, capGainsYearTotals.EjectMap()}
+	return cc
 }
 
 func CalcCumulativeCapitalGains(secGains map[string]*CumulativeCapitalGains) *CumulativeCapitalGains {
-	var capGainsTotal float64 = 0.0
-	capGainsYearTotals := util.NewDefaultMap[int, float64](func(_ int) float64 { return 0.0 })
-
+	cc := &CumulativeCapitalGains{
+		CapitalGainsYearTotals: map[int]float64{},
+		GrossIncomeByYear:      map[int]float64{},
+	}
 	for _, gains := range secGains {
-		capGainsTotal += gains.CapitalGainsTotal
+		cc.CapitalGainsTotal += gains.CapitalGainsTotal
+		cc.GrossIncomeTotal += gains.GrossIncomeTotal
 		for year, yearGains := range gains.CapitalGainsYearTotals {
-			yearTotalSoFar := capGainsYearTotals.Get(year)
-			capGainsYearTotals.Set(year, yearTotalSoFar+yearGains)
+			cc.CapitalGainsYearTotals[year] += yearGains
+		}
+		for year, gross := range gains.GrossIncomeByYear {
+			cc.GrossIncomeByYear[year] += gross
 		}
 	}
-
-	return &CumulativeCapitalGains{capGainsTotal, capGainsYearTotals.EjectMap()}
+	return cc
 }

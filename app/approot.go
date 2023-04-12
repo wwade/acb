@@ -144,12 +144,120 @@ func getCumulativeCapitalGains(deltasBySec map[string]*SecurityDeltas) *AllCumul
 		securityGains[sec] = ptf.CalcSecurityCumulativeCapitalGains(deltas.Deltas)
 	}
 	aggregateGains := ptf.CalcCumulativeCapitalGains(securityGains)
-	return &AllCumulativeCapitalGains{securityGains, aggregateGains}
+	return &AllCumulativeCapitalGains{
+		SecurityGains:  securityGains,
+		AggregateGains: aggregateGains,
+	}
 }
 
 type AppRenderResult struct {
 	SecurityTables      map[string]*ptf.RenderTable
 	AggregateGainsTable *ptf.RenderTable
+}
+
+func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
+	var allDeltas []*ptf.TxDelta
+	ph := ptf.PrintHelper{
+		PrintAllDecimals: full,
+	}
+
+	for _, v := range deltasBySec {
+		for _, d := range v.Deltas {
+			allDeltas = append(allDeltas, d)
+		}
+	}
+
+	curCost := map[string]float64{}
+	type costinfo struct {
+		date    date.Date
+		total   float64
+		secCost map[string]float64
+	}
+	var costs []costinfo
+	sort.Slice(allDeltas, func(i, j int) bool {
+		return allDeltas[i].Tx.SettlementDate.Before(allDeltas[j].Tx.SettlementDate)
+	})
+	for _, d := range allDeltas {
+		curCost[d.PostStatus.Security] = d.PostStatus.TotalAcb
+		inf := costinfo{
+			date:    d.Tx.SettlementDate,
+			total:   0,
+			secCost: map[string]float64{},
+		}
+		for s, v := range curCost {
+			inf.total += v
+			inf.secCost[s] = v
+		}
+		costs = append(costs, inf)
+	}
+
+	keys := make([]string, 0, len(curCost))
+	for k := range curCost {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+
+	if len(costs) == 0 {
+		return
+	}
+
+	tbl := ptf.RenderTable{
+		Header: append([]string{"Date", "Total"}, keys...),
+	}
+	for _, c := range costs {
+		var ind []string
+		for _, sec := range keys {
+			ind = append(ind, ph.DollarStr(c.secCost[sec]))
+		}
+		tbl.Rows = append(tbl.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
+	}
+	ptf.PrintRenderTable("Total Costs", &tbl, os.Stdout)
+
+	yearMax := map[int]costinfo{}
+	year := costs[0].date.Year()
+	var years []int
+	var cur costinfo
+	dirty := false
+	for _, c := range costs {
+		if year != c.date.Year() {
+			if dirty {
+				yearMax[year] = cur
+				years = append(years, year)
+			}
+			year = c.date.Year()
+			cur = costinfo{}
+		}
+		dirty = true
+		if cur.total < c.total {
+			cur = c
+		}
+
+	}
+	if dirty {
+		yearMax[year] = cur
+		years = append(years, year)
+	}
+
+	tbl = ptf.RenderTable{
+		Header: append([]string{"Year", "Date", "Total"}, keys...),
+	}
+	for _, year := range years {
+		c := yearMax[year]
+		var ind []string
+		for _, sec := range keys {
+			ind = append(ind, ph.DollarStr(c.secCost[sec]))
+		}
+		tbl.Rows = append(tbl.Rows,
+			append([]string{
+				fmt.Sprint(year),
+				c.date.String(),
+				ph.DollarStr(c.total),
+			}, ind...),
+		)
+	}
+	ptf.PrintRenderTable("Yearly Max Costs", &tbl, os.Stdout)
 }
 
 func RunAcbAppToRenderModel(
@@ -168,6 +276,7 @@ func RunAcbAppToRenderModel(
 		return nil, err
 	}
 
+	printCosts(deltasBySec, renderFullDollarValues)
 	gains := getCumulativeCapitalGains(deltasBySec)
 
 	secModels := make(map[string]*ptf.RenderTable)
@@ -181,7 +290,7 @@ func RunAcbAppToRenderModel(
 	cumulativeGainsTable := ptf.RenderAggregateCapitalGains(
 		gains.AggregateGains, renderFullDollarValues)
 
-	return &AppRenderResult{secModels, cumulativeGainsTable}, nil
+	return &AppRenderResult{SecurityTables: secModels, AggregateGainsTable: cumulativeGainsTable}, nil
 }
 
 func RunAcbAppSummaryToModel(
@@ -211,7 +320,7 @@ func RunAcbAppSummaryToModel(
 		deltasBySec[sec] = deltas.Deltas
 	}
 	if len(errors) > 0 {
-		return &ptf.CollectedSummaryData{nil, nil, errors}, nil
+		return &ptf.CollectedSummaryData{Txs: nil, Warnings: nil, Errors: errors}, nil
 	}
 
 	return ptf.MakeAggregateSummaryTxs(latestDate, deltasBySec, options.SplitAnnualSummaryGains), nil

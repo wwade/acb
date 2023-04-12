@@ -187,7 +187,7 @@ func getSuperficialLossInfo(
 			}
 			// No TXs for this affiliate before or at the current sell.
 			// AddTx would have encountered an oversell if this was to assert.
-			util.Assert(afId != sellTxAffil.Id(),
+			util.Assertf(afId != sellTxAffil.Id(),
 				"getSuperficialLossInfo: no existing portfolio status for affiliate %s",
 				sellTxAffil.Name())
 			return 0
@@ -374,8 +374,9 @@ func AddTx(
 	newAllAffiliatesShareBalance := preTxStatus.AllAffiliatesShareBalance
 	registered := tx.Affiliate != nil && tx.Affiliate.Registered()
 	var newAcbTotal float64 = preTxStatus.TotalAcb
-	var capitalGains float64 = util.Tern[float64](registered, math.NaN(), 0.0)
-	var superficialLoss float64 = util.Tern[float64](registered, math.NaN(), 0.0)
+	var grossIncome float64
+	var capitalGains float64 = util.Tern(registered, math.NaN(), 0.0)
+	var superficialLoss float64 = util.Tern(registered, math.NaN(), 0.0)
 	superficialLossRatio := util.Uint32Ratio{}
 	potentiallyOverAppliedSfl := false
 	var newTxs []*Tx = nil
@@ -413,6 +414,7 @@ func AddTx(
 		// Note commission plays no effect on sell order ACB
 		newAcbTotal = preTxStatus.TotalAcb - (preTxStatus.PerShareAcb() * float64(tx.Shares))
 		totalPayout := totalLocalSharePrice - (tx.Commission * tx.CommissionCurrToLocalExchangeRate)
+		grossIncome = totalPayout
 		capitalGains = totalPayout - (preTxStatus.PerShareAcb() * float64(tx.Shares))
 
 		if !registered && capitalGains < 0.0 {
@@ -531,6 +533,7 @@ func AddTx(
 		PreStatus:                 preTxStatus,
 		PostStatus:                newStatus,
 		CapitalGain:               capitalGains,
+		GrossIncome:               grossIncome,
 		SuperficialLoss:           superficialLoss,
 		SuperficialLossRatio:      superficialLossRatio,
 		PotentiallyOverAppliedSfl: potentiallyOverAppliedSfl,
