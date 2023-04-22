@@ -213,7 +213,7 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 		}
 		tbl.Rows = append(tbl.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
 	}
-	ptf.PrintRenderTable("Total Costs", &tbl, os.Stdout)
+	// ptf.PrintRenderTable("Total Costs", &tbl, os.Stdout)
 
 	yearMax := map[int]costinfo{}
 	year := costs[0].date.Year()
