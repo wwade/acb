@@ -189,38 +189,29 @@ func RenderTxTableModel(
 
 // RenderAggregateCapitalGains generates a RenderTable that will render out to this:
 //
-//	| Year             | Capital Gains | Gross Income |
-//	+------------------+---------------+--------------|
-//	| 2000             | xxxx.xx       | xxxx.xx      |
-//	| 2001             | xxxx.xx       | xxxx.xx      |
-//	| Since inception  | xxxx.xx       | xxxx.xx      |
+//	| Year             | Capital Gains |
+//	+------------------+---------------+
+//	| 2000             | xxxx.xx       |
+//	| 2001             | xxxx.xx       |
+//	| Since inception  | xxxx.xx       |
 func RenderAggregateCapitalGains(
 	gains *CumulativeCapitalGains, renderFullDollarValues bool) *RenderTable {
 
 	table := &RenderTable{}
-	table.Header = []string{"Year", "Capital Gains", "Gross Income"}
+	table.Header = []string{"Year", "Capital Gains"}
 
 	ph := PrintHelper{PrintAllDecimals: renderFullDollarValues}
 
 	years := gains.CapitalGainsYearTotalsKeysSorted()
 	for _, year := range years {
 		yearlyTotal := gains.CapitalGainsYearTotals[year]
-		gross := gains.GrossIncomeByYear[year]
 		table.Rows = append(
 			table.Rows,
-			[]string{
-				fmt.Sprintf("%d", year),
-				ph.PlusMinusDollar(yearlyTotal, false),
-				ph.DollarStr(gross),
-			})
+			[]string{fmt.Sprintf("%d", year), ph.PlusMinusDollar(yearlyTotal, false)})
 	}
 	table.Rows = append(
 		table.Rows,
-		[]string{
-			"Since inception",
-			ph.PlusMinusDollar(gains.CapitalGainsTotal, false),
-			ph.DollarStr(gains.GrossIncomeTotal),
-		})
+		[]string{"Since inception", ph.PlusMinusDollar(gains.CapitalGainsTotal, false)})
 
 	return table
 }
