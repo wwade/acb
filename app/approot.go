@@ -213,7 +213,13 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 		}
 		tbl.Rows = append(tbl.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
 	}
-	// ptf.PrintRenderTable("Total Costs", &tbl, os.Stdout)
+
+	fp, err := os.Create("total-costs.csv")
+	if err != nil {
+		panic(err)
+	}
+	ptf.PrintRenderTable("Total Costs", &tbl, fp)
+	fp.Close()
 
 	yearMax := map[int]costinfo{}
 	year := costs[0].date.Year()
@@ -257,7 +263,11 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 			}, ind...),
 		)
 	}
-	ptf.PrintRenderTable("Yearly Max Costs", &tbl, os.Stdout)
+	if fp, err = os.Create("yearly-max-costs.csv"); err != nil {
+		panic(err)
+	}
+	ptf.PrintRenderTable("Yearly Max Costs", &tbl, fp)
+	fp.Close()
 }
 
 func RunAcbAppToRenderModel(
@@ -450,11 +460,16 @@ func RunAcbAppToConsole(
 			options, legacyOptions, ratesCache, errPrinter,
 		)
 	} else {
+		fp, err := os.Create("acb-all.csv")
+		if err != nil {
+			panic(err)
+		}
 		ok, _ = RunAcbAppToWriter(
-			os.Stdout,
+			fp,
 			csvFileReaders, allInitStatus, options.ForceDownload, options.RenderFullDollarValues,
 			legacyOptions, ratesCache, errPrinter,
 		)
+		fp.Close()
 	}
 	return ok
 }

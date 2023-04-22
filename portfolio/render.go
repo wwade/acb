@@ -1,13 +1,13 @@
 package portfolio
 
 import (
+	"encoding/csv"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"strings"
 
-	tw "github.com/olekukonko/tablewriter"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -222,18 +222,13 @@ func PrintRenderTable(title string, tableModel *RenderTable, writer io.Writer) {
 	}
 	fmt.Fprintf(writer, "%s\n", title)
 
-	table := tw.NewWriter(writer)
-	table.SetHeader(tableModel.Header)
-	table.SetBorder(false)
-	table.SetRowLine(true)
+	o := csv.NewWriter(writer)
+	o.Write(tableModel.Header)
 
 	for _, row := range tableModel.Rows {
-		table.Append(row)
+		o.Write(row)
 	}
-
-	table.SetFooter(tableModel.Footer)
-
-	table.Render()
+	o.Flush()
 
 	for _, note := range tableModel.Notes {
 		fmt.Fprintln(writer, note)
