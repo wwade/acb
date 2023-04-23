@@ -132,8 +132,8 @@ func (t *AffiliateDedupTable) GetDefaultAffiliate() *Affiliate {
 
 type PortfolioSecurityStatus struct {
 	Security                  string
-	ShareBalance              uint32
-	AllAffiliatesShareBalance uint32
+	ShareBalance              float64
+	AllAffiliatesShareBalance float64
 	// NaN for registered accounts/affiliates.
 	TotalAcb float64
 }
@@ -159,7 +159,7 @@ type Tx struct {
 	TradeDate                         date.Date
 	SettlementDate                    date.Date
 	Action                            TxAction
-	Shares                            uint32
+	Shares                            float64
 	AmountPerShare                    float64
 	Commission                        float64
 	TxCurrency                        Currency
@@ -193,7 +193,7 @@ type TxDelta struct {
 
 	SuperficialLoss float64
 	// A ratio, representing <N reacquired shares which suffered SFL> / <N sold shares>
-	SuperficialLossRatio      util.Uint32Ratio
+	SuperficialLossRatio      util.RatioF64
 	PotentiallyOverAppliedSfl bool
 }
 

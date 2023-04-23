@@ -33,7 +33,7 @@ func ParseInitialStatus(
 			return nil, fmt.Errorf("Invalid ACB format '%s'", opt)
 		}
 		symbol := parts[0]
-		shares, err := strconv.ParseUint(parts[1], 10, 32)
+		shares, err := strconv.ParseFloat(parts[1], 64)
 		if err != nil {
 			return nil, fmt.Errorf("Invalid shares format '%s'. %v", opt, err)
 		}
@@ -46,7 +46,7 @@ func ParseInitialStatus(
 			return nil, fmt.Errorf("Symbol %s specified multiple times", symbol)
 		}
 		stati[symbol] = &ptf.PortfolioSecurityStatus{
-			Security: symbol, ShareBalance: uint32(shares), TotalAcb: acb}
+			Security: symbol, ShareBalance: shares, TotalAcb: acb}
 	}
 	return stati, nil
 }

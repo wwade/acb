@@ -105,7 +105,7 @@ func RenderTxTableModel(
 			}
 
 			superficialLossAsterix = fmt.Sprintf(
-				" *\n(SfL %s%s; %d/%d%s)",
+				" *\n(SfL %s%s; %v/%v%s)",
 				ph.PlusMinusDollar(d.SuperficialLoss, false),
 				util.Tern[string](specifiedSflIsForced, "!", ""),
 				d.SuperficialLossRatio.Numerator,
@@ -132,7 +132,7 @@ func RenderTxTableModel(
 		row := []string{d.Tx.Security, tx.TradeDate.String(), tx.SettlementDate.String(), tx.Action.String(),
 			// Amount
 			ph.CurrWithFxStr(float64(tx.Shares)*tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
-			fmt.Sprintf("%d", tx.Shares),
+			fmt.Sprintf("%v", tx.Shares),
 			ph.CurrWithFxStr(tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
 			// ACB of sale
 			strOrDash(tx.Action == SELL, ph.DollarStr(preAcbPerShare*float64(tx.Shares))),
@@ -142,8 +142,8 @@ func RenderTxTableModel(
 			// Cap gains
 			strOrDash(tx.Action == SELL, ph.PlusMinusDollar(d.CapitalGain, false)+superficialLossAsterix),
 			util.Tern(d.PostStatus.ShareBalance != d.PostStatus.AllAffiliatesShareBalance,
-				fmt.Sprintf("%d / %d", d.PostStatus.ShareBalance, d.PostStatus.AllAffiliatesShareBalance),
-				fmt.Sprintf("%d", d.PostStatus.ShareBalance)),
+				fmt.Sprintf("%v / %v", d.PostStatus.ShareBalance, d.PostStatus.AllAffiliatesShareBalance),
+				fmt.Sprintf("%v", d.PostStatus.ShareBalance)),
 			ph.PlusMinusDollar(d.AcbDelta(), true),
 			ph.DollarStr(d.PostStatus.TotalAcb),
 			// Acb per share

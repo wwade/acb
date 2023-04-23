@@ -210,11 +210,11 @@ func parseAction(data string, tx *Tx) error {
 }
 
 func parseShares(data string, tx *Tx) error {
-	shares, err := strconv.ParseUint(data, 10, 32)
+	shares, err := strconv.ParseFloat(data, 64)
 	if err != nil {
 		return fmt.Errorf("Error parsing # shares: %v", err)
 	}
-	tx.Shares = uint32(shares)
+	tx.Shares = shares
 	return nil
 }
 
@@ -370,7 +370,7 @@ func ToCsvString(txs []*Tx) string {
 			tx.TradeDate.String(),
 			tx.SettlementDate.String(),
 			tx.Action.String(),
-			fmt.Sprintf("%d", tx.Shares),
+			fmt.Sprintf("%v", tx.Shares),
 			fmt.Sprintf("%f", tx.AmountPerShare),
 			fmt.Sprintf("%f", tx.Commission),
 			currString(tx.TxCurrency),

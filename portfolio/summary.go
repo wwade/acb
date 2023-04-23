@@ -260,7 +260,7 @@ func makeAnnualGainsSummaryTxs(
 
 	// Add length of yearsWithGains to the share balance, as we'll sell one share per year
 	// This will generally always be non-zero for non-registered affiliates
-	nBaseShares := sumPostStatus.ShareBalance + uint32(len(yearsWithGains))
+	nBaseShares := sumPostStatus.ShareBalance + float64(len(yearsWithGains))
 	if nBaseShares > 0 {
 		tx := deltas[latestSummarizableDeltaIdx].Tx
 		// Get the earliest year, and use Jan 1 of the previous year for the buy.
