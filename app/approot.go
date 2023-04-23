@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,6 +70,7 @@ type Options struct {
 	RenderFullDollarValues  bool
 	SummaryModeLatestDate   date.Date
 	SplitAnnualSummaryGains bool
+	CSVOutputDir            string
 }
 
 func (o *Options) SummaryMode() bool {
@@ -81,6 +83,7 @@ func NewOptions() Options {
 		RenderFullDollarValues:  false,
 		SummaryModeLatestDate:   date.Date{},
 		SplitAnnualSummaryGains: false,
+		CSVOutputDir:            "",
 	}
 }
 
@@ -218,7 +221,7 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 	if err != nil {
 		panic(err)
 	}
-	ptf.PrintRenderTable("Total Costs", &tbl, fp)
+	ptf.PrintRenderTable("", &tbl, fp)
 	fp.Close()
 
 	yearMax := map[int]costinfo{}
@@ -266,7 +269,7 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 	if fp, err = os.Create("yearly-max-costs.csv"); err != nil {
 		panic(err)
 	}
-	ptf.PrintRenderTable("Yearly Max Costs", &tbl, fp)
+	ptf.PrintRenderTable("", &tbl, fp)
 	fp.Close()
 }
 
@@ -395,6 +398,72 @@ func RunAcbAppToWriter(
 	return true, renderRes
 }
 
+func RunAcbAppToCSV(
+	csvOutDir string,
+	csvFileReaders []DescribedReader,
+	allInitStatus map[string]*ptf.PortfolioSecurityStatus,
+	forceDownload bool,
+	legacyOptions LegacyOptions,
+	ratesCache fx.RatesCache,
+	errPrinter log.ErrorPrinter,
+) bool {
+	const renderFullDollarValues = true
+	renderRes, err := RunAcbAppToRenderModel(
+		csvFileReaders, allInitStatus, forceDownload, renderFullDollarValues,
+		legacyOptions, ratesCache, errPrinter,
+	)
+
+	if err != nil {
+		errPrinter.Ln("Error:", err)
+		return false
+	}
+
+	secRenderTables := renderRes.SecurityTables
+	nSecs := len(secRenderTables)
+
+	secs := make([]string, 0, len(secRenderTables))
+	for k := range secRenderTables {
+		secs = append(secs, k)
+	}
+	sort.Strings(secs)
+
+	var secsWithErrors []string
+
+	if len(secs) == 0 {
+		errPrinter.Ln("Error: no securities found in input")
+		return false
+	}
+	if err := os.MkdirAll(csvOutDir, os.ModePerm); err != nil {
+		errPrinter.Ln(fmt.Sprintf("Error %T %v", err, err))
+		return false
+	}
+
+	i := 0
+
+	for _, sec := range secs {
+		fn := filepath.Join(csvOutDir, sec+".csv")
+		fp, err := os.Create(fn)
+		if err != nil {
+			errPrinter.Ln(fmt.Sprintf("Error opening output file %q: %v", fn, err))
+			return false
+		}
+		defer fp.Close()
+		renderTable := secRenderTables[sec]
+		ptf.PrintRenderTable("", renderTable, fp)
+		if i < (nSecs - 1) {
+			fmt.Fprintln(fp, "")
+		}
+		if len(renderTable.Errors) > 0 {
+			secsWithErrors = append(secsWithErrors, sec)
+		}
+		i++
+	}
+	if len(secsWithErrors) > 0 {
+		fmt.Println("\n[!] There are errors for the following securities:", strings.Join(secsWithErrors, ", "))
+	}
+	return true
+}
+
 func WriteSummaryData(summData *ptf.CollectedSummaryData, errPrinter log.ErrorPrinter) {
 	if summData.Errors != nil && len(summData.Errors) > 0 {
 		for sec, errs := range summData.Errors {
@@ -453,23 +522,24 @@ func RunAcbAppToConsole(
 	errPrinter log.ErrorPrinter) bool {
 
 	ok := true
-	if options.SummaryMode() {
+	switch {
+	case options.SummaryMode():
 		ok = RunAcbAppSummaryToConsole(
 			options.SummaryModeLatestDate, csvFileReaders, allInitStatus,
 			options.ForceDownload,
 			options, legacyOptions, ratesCache, errPrinter,
 		)
-	} else {
-		fp, err := os.Create("acb-all.csv")
-		if err != nil {
-			panic(err)
-		}
+	case options.CSVOutputDir != "":
+		ok = RunAcbAppToCSV(
+			options.CSVOutputDir, csvFileReaders, allInitStatus, options.ForceDownload,
+			legacyOptions, ratesCache, errPrinter,
+		)
+	default:
 		ok, _ = RunAcbAppToWriter(
-			fp,
+			os.Stdout,
 			csvFileReaders, allInitStatus, options.ForceDownload, options.RenderFullDollarValues,
 			legacyOptions, ratesCache, errPrinter,
 		)
-		fp.Close()
 	}
 	return ok
 }

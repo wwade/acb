@@ -220,13 +220,18 @@ func PrintRenderTable(title string, tableModel *RenderTable, writer io.Writer) {
 	for _, err := range tableModel.Errors {
 		fmt.Fprintf(writer, "[!] %v. Printing parsed information state:\n", err)
 	}
-	fmt.Fprintf(writer, "%s\n", title)
+	if title != "" {
+		fmt.Fprintf(writer, "%s\n", title)
+	}
 
 	o := csv.NewWriter(writer)
 	o.Write(tableModel.Header)
 
 	for _, row := range tableModel.Rows {
 		o.Write(row)
+	}
+	if len(tableModel.Footer) > 0 {
+		o.Write(tableModel.Footer)
 	}
 	o.Flush()
 
