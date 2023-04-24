@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"sort"
 	"strconv"
@@ -33,9 +34,10 @@ func ParseInitialStatus(
 			return nil, fmt.Errorf("Invalid ACB format '%s'", opt)
 		}
 		symbol := parts[0]
-		shares, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid shares format '%s'. %v", opt, err)
+		var shares big.Rat
+		_, ok := shares.SetString(parts[1])
+		if !ok {
+			return nil, fmt.Errorf("Invalid shares format '%q'", opt)
 		}
 		acb, err := strconv.ParseFloat(parts[2], 64)
 		if err != nil {

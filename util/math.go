@@ -1,35 +1,43 @@
 package util
 
-import "golang.org/x/exp/constraints"
+import (
+	"math/big"
+)
 
-func MinValue[T constraints.Ordered](val0 T, vals ...T) T {
+func MinValue(val0 big.Rat, vals ...big.Rat) big.Rat {
 	min := val0
 	for _, v := range vals {
-		if v < min {
+		if v.Cmp(&min) < 0 {
 			min = v
 		}
 	}
 	return min
 }
 
-type RatioF64 struct {
-	Numerator   float64
-	Denominator float64
+func IncRat(x *big.Rat, y big.Rat) {
+	x.Add(x, &y)
 }
 
-func (r *RatioF64) Valid() bool {
-	return r.Denominator != 0
+func DecRat(x *big.Rat, y big.Rat) {
+	x.Sub(x, &y)
 }
 
-func (r *RatioF64) ToFloat64() float64 {
-	return r.Numerator / r.Denominator
+func AddRat(x big.Rat, y big.Rat) (ret big.Rat) {
+	ret.Add(&x, &y)
+	return ret
+}
+func SubRat(x big.Rat, y big.Rat) (ret big.Rat) {
+	ret.Sub(&x, &y)
+	return ret
 }
 
-func AlmostEqual[T constraints.Float](v0, v1 T) bool {
-	const threshold = 1e-9
-	if v0 > v1 {
-		return (v0 - v1) < threshold
-	} else {
-		return (v1 - v0) < threshold
-	}
+func DivRat(x big.Rat, y big.Rat) *big.Rat {
+	var ret big.Rat
+	ret.Mul(&x, y.Inv(&y))
+	return &ret
+}
+
+func ToFloat(x big.Rat) float64 {
+	v, _ := x.Float64()
+	return v
 }

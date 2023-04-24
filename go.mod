@@ -8,6 +8,8 @@ require (
 	github.com/stretchr/testify v1.8.0
 )
 
+require golang.org/x/image v0.7.0 // indirect
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect

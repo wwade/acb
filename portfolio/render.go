@@ -108,8 +108,8 @@ func RenderTxTableModel(
 				" *\n(SfL %s%s; %v/%v%s)",
 				ph.PlusMinusDollar(d.SuperficialLoss, false),
 				util.Tern[string](specifiedSflIsForced, "!", ""),
-				d.SuperficialLossRatio.Numerator,
-				d.SuperficialLossRatio.Denominator,
+				d.SuperficialLossRatio.Num(),
+				d.SuperficialLossRatio.Denom(),
 				extraSflNoteStr,
 			)
 			sawSuperficialLoss = true
@@ -118,8 +118,8 @@ func RenderTxTableModel(
 		tx := d.Tx
 
 		var preAcbPerShare float64 = 0.0
-		if tx.Action == SELL && d.PreStatus.ShareBalance > 0 {
-			preAcbPerShare = d.PreStatus.TotalAcb / float64(d.PreStatus.ShareBalance)
+		if tx.Action == SELL && d.PreStatus.ShareBalance.Sign() > 0 {
+			preAcbPerShare = d.PreStatus.TotalAcb / util.ToFloat(d.PreStatus.ShareBalance)
 		}
 
 		var affiliateName string
@@ -131,24 +131,24 @@ func RenderTxTableModel(
 
 		row := []string{d.Tx.Security, tx.TradeDate.String(), tx.SettlementDate.String(), tx.Action.String(),
 			// Amount
-			ph.CurrWithFxStr(float64(tx.Shares)*tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
+			ph.CurrWithFxStr(util.ToFloat(tx.Shares)*tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
 			fmt.Sprintf("%v", tx.Shares),
 			ph.CurrWithFxStr(tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
 			// ACB of sale
-			strOrDash(tx.Action == SELL, ph.DollarStr(preAcbPerShare*float64(tx.Shares))),
+			strOrDash(tx.Action == SELL, ph.DollarStr(preAcbPerShare*util.ToFloat(tx.Shares))),
 			// Commission
 			strOrDash(tx.Commission != 0.0,
 				ph.CurrWithFxStr(tx.Commission, tx.CommissionCurrency, tx.CommissionCurrToLocalExchangeRate)),
 			// Cap gains
 			strOrDash(tx.Action == SELL, ph.PlusMinusDollar(d.CapitalGain, false)+superficialLossAsterix),
-			util.Tern(d.PostStatus.ShareBalance != d.PostStatus.AllAffiliatesShareBalance,
+			util.Tern(d.PostStatus.ShareBalance.Cmp(&d.PostStatus.AllAffiliatesShareBalance) != 0,
 				fmt.Sprintf("%v / %v", d.PostStatus.ShareBalance, d.PostStatus.AllAffiliatesShareBalance),
 				fmt.Sprintf("%v", d.PostStatus.ShareBalance)),
 			ph.PlusMinusDollar(d.AcbDelta(), true),
 			ph.DollarStr(d.PostStatus.TotalAcb),
 			// Acb per share
-			strOrDash(d.PostStatus.ShareBalance > 0.0,
-				ph.DollarStr(d.PostStatus.TotalAcb/float64(d.PostStatus.ShareBalance))),
+			strOrDash(d.PostStatus.ShareBalance.Sign() != 0,
+				ph.DollarStr(d.PostStatus.TotalAcb/util.ToFloat(d.PostStatus.ShareBalance))),
 			affiliateName,
 			tx.Memo,
 		}

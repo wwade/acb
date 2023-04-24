@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -51,7 +52,7 @@ func init() {
 func DefaultTx() *Tx {
 	return &Tx{
 		Security: "", SettlementDate: date.Date{}, Action: NO_ACTION,
-		Shares: 0, AmountPerShare: 0.0, Commission: 0.0,
+		Shares: *big.NewRat(0, 1), AmountPerShare: 0.0, Commission: 0.0,
 		TxCurrency: DEFAULT_CURRENCY, TxCurrToLocalExchangeRate: 0.0,
 		CommissionCurrency: DEFAULT_CURRENCY, CommissionCurrToLocalExchangeRate: 0.0,
 		Affiliate: GlobalAffiliateDedupTable.GetDefaultAffiliate(),
@@ -210,11 +211,11 @@ func parseAction(data string, tx *Tx) error {
 }
 
 func parseShares(data string, tx *Tx) error {
-	shares, err := strconv.ParseFloat(data, 64)
-	if err != nil {
-		return fmt.Errorf("Error parsing # shares: %v", err)
+	shares, ok := (&big.Rat{}).SetString(data)
+	if !ok {
+		return fmt.Errorf("Error parsing # shares %q", data)
 	}
-	tx.Shares = shares
+	tx.Shares = *shares
 	return nil
 }
 

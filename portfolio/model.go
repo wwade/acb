@@ -1,6 +1,7 @@
 package portfolio
 
 import (
+	"math/big"
 	"regexp"
 	"sort"
 	"strings"
@@ -132,21 +133,21 @@ func (t *AffiliateDedupTable) GetDefaultAffiliate() *Affiliate {
 
 type PortfolioSecurityStatus struct {
 	Security                  string
-	ShareBalance              float64
-	AllAffiliatesShareBalance float64
+	ShareBalance              big.Rat
+	AllAffiliatesShareBalance big.Rat
 	// NaN for registered accounts/affiliates.
 	TotalAcb float64
 }
 
 func NewEmptyPortfolioSecurityStatus(security string) *PortfolioSecurityStatus {
-	return &PortfolioSecurityStatus{Security: security, ShareBalance: 0, TotalAcb: 0.0}
+	return &PortfolioSecurityStatus{Security: security, TotalAcb: 0.0}
 }
 
 func (s *PortfolioSecurityStatus) PerShareAcb() float64 {
-	if s.ShareBalance == 0 {
+	if s.ShareBalance.Sign() == 0 {
 		return 0
 	}
-	return s.TotalAcb / float64(s.ShareBalance)
+	return s.TotalAcb / util.ToFloat(s.ShareBalance)
 }
 
 type SFLInput struct {
@@ -159,7 +160,7 @@ type Tx struct {
 	TradeDate                         date.Date
 	SettlementDate                    date.Date
 	Action                            TxAction
-	Shares                            float64
+	Shares                            big.Rat
 	AmountPerShare                    float64
 	Commission                        float64
 	TxCurrency                        Currency
@@ -193,7 +194,7 @@ type TxDelta struct {
 
 	SuperficialLoss float64
 	// A ratio, representing <N reacquired shares which suffered SFL> / <N sold shares>
-	SuperficialLossRatio      util.RatioF64
+	SuperficialLossRatio      *big.Rat
 	PotentiallyOverAppliedSfl bool
 }
 

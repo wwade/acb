@@ -3,6 +3,7 @@ package portfolio
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"time"
 
@@ -183,7 +184,7 @@ func makeSimpleSummaryTxs(
 		tx := deltas[latestSummarizableDeltaIdx].Tx
 		// All one TX. No capital gains yet.
 		sumPostStatus := deltas[latestSummarizableDeltaIdx].PostStatus
-		if sumPostStatus.ShareBalance != 0 {
+		if sumPostStatus.ShareBalance.Sign() != 0 {
 			summaryTx := &Tx{
 				Security: tx.Security,
 				// Use same day for TradeDate and SettlementDate, since this is not
@@ -192,7 +193,7 @@ func makeSimpleSummaryTxs(
 				SettlementDate: tx.SettlementDate,
 				Action:         BUY,
 				Shares:         sumPostStatus.ShareBalance,
-				AmountPerShare: realNumOrZero(sumPostStatus.TotalAcb / float64(sumPostStatus.ShareBalance)),
+				AmountPerShare: realNumOrZero(sumPostStatus.TotalAcb / util.ToFloat(sumPostStatus.ShareBalance)),
 				Commission:     0.0,
 				TxCurrency:     DEFAULT_CURRENCY, TxCurrToLocalExchangeRate: 0.0,
 				CommissionCurrency: DEFAULT_CURRENCY, CommissionCurrToLocalExchangeRate: 0.0,
@@ -250,18 +251,18 @@ func makeAnnualGainsSummaryTxs(
 
 	sumPostStatus := deltas[latestSummarizableDeltaIdx].PostStatus
 	baseAcbPerShare := 0.0
-	if sumPostStatus.ShareBalance != 0.0 {
-		baseAcbPerShare = sumPostStatus.TotalAcb / float64(sumPostStatus.ShareBalance)
+	if sumPostStatus.ShareBalance.Sign() != 0 {
+		baseAcbPerShare = sumPostStatus.TotalAcb / util.ToFloat(sumPostStatus.ShareBalance)
 	}
 
-	if sumPostStatus.ShareBalance == 0 {
+	if sumPostStatus.ShareBalance.Sign() == 0 {
 		warnings = append(warnings, shareBalanceZeroWarning)
 	}
 
 	// Add length of yearsWithGains to the share balance, as we'll sell one share per year
 	// This will generally always be non-zero for non-registered affiliates
-	nBaseShares := sumPostStatus.ShareBalance + float64(len(yearsWithGains))
-	if nBaseShares > 0 {
+	nBaseShares := util.AddRat(sumPostStatus.ShareBalance, *big.NewRat(int64(len(yearsWithGains)), 1))
+	if nBaseShares.Sign() > 0 {
 		tx := deltas[latestSummarizableDeltaIdx].Tx
 		// Get the earliest year, and use Jan 1 of the previous year for the buy.
 		dt := date.New(uint32(firstYear-1), time.January, 1)
@@ -296,7 +297,7 @@ func makeAnnualGainsSummaryTxs(
 			TradeDate:      dt,
 			SettlementDate: dt,
 			Action:         SELL,
-			Shares:         1,
+			Shares:         *big.NewRat(1, 1),
 			AmountPerShare: realNumOrZero(baseAcbPerShare + gain),
 			Commission:     loss,
 			TxCurrency:     DEFAULT_CURRENCY, TxCurrToLocalExchangeRate: 0.0,
