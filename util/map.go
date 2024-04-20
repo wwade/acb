@@ -1,11 +1,19 @@
 package util
 
+import (
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
+)
+
 func MapKeys[K comparable, V any](m map[K]V) []K {
 	keys := make([]K, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func IntDecimalOptMapKeys(m map[int]decimal_opt.DecimalOpt) []int {
+	return MapKeys[int, decimal_opt.DecimalOpt](m)
 }
 
 func IntFloat64MapKeys(m map[int]float64) []int {

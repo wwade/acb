@@ -1,47 +1,12 @@
 package test
 
 import (
-	"math"
+	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 )
-
-var NaN float64 = math.NaN()
-
-func IsAlmostEqual(a float64, b float64) bool {
-	if math.IsNaN(a) && math.IsNaN(b) {
-		return true
-	}
-	diff := a - b
-	return diff < 0.0000001 && diff > -0.0000001
-}
-
-func SoftAlmostEqual(t *testing.T, exp float64, actual float64,
-	fmtAndArgs ...interface{}) bool {
-
-	if IsAlmostEqual(exp, actual) {
-		return true
-	}
-	// This should always fail
-	return assert.Equal(t, exp, actual, fmtAndArgs...)
-}
-
-func AlmostEqual(t *testing.T, exp float64, actual float64, fmtAndArgs ...interface{}) {
-	if !SoftAlmostEqual(t, exp, actual, fmtAndArgs...) {
-		t.FailNow()
-	}
-}
-
-// Equal will fail with NaN == NaN, so we need some special help to make
-// the failure pretty.
-func RqNaN(t *testing.T, actual float64) {
-	if !math.IsNaN(actual) {
-		// This always fails, but will give some nice ouput
-		require.Equal(t, NaN, actual)
-	}
-}
 
 // regex can be pattern string or Regexp
 func RqPanicsWithRegexp(t *testing.T, regex interface{}, fn func()) {
@@ -53,4 +18,33 @@ func RqPanicsWithRegexp(t *testing.T, regex interface{}, fn func()) {
 		}
 	}()
 	fn()
+}
+
+// Use this class instead of require.New if any type needing comparison has
+// either a custom String method or Equal method (Decimal for example)
+type CustomRequire struct {
+	t       *testing.T
+	options cmp.Options // This is a []Option
+}
+
+func NewCustomRequire(t *testing.T) *CustomRequire {
+	return &CustomRequire{t, []cmp.Option{
+		cmp.Comparer(TxTestEqual),
+	}}
+}
+
+func (rq *CustomRequire) PanicsWithRegexp(regex interface{}, fn func()) {
+	RqPanicsWithRegexp(rq.t, regex, fn)
+}
+
+func (rq *CustomRequire) Equal(expected, actual interface{}) {
+	diff := cmp.Diff(expected, actual, rq.options)
+	require.True(rq.t, diff == "", diff)
+}
+
+func (rq *CustomRequire) LinesEqual(expected, actual string) {
+	expLines := strings.Split(expected, "\n")
+	actLines := strings.Split(actual, "\n")
+	diff := cmp.Diff(expLines, actLines, rq.options)
+	require.True(rq.t, diff == "", diff)
 }

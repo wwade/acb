@@ -1,60 +1,84 @@
 package portfolio
 
 import (
-	"math"
 	"sort"
 
+	"github.com/shopspring/decimal"
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	"github.com/tsiemens/acb/util"
 )
 
 type Stat struct {
-	Total      float64
-	YearTotals map[int]float64
+	Total      decimal_opt.DecimalOpt
+	YearTotals map[int]decimal_opt.DecimalOpt
 }
 
 type CumulativeCapitalGains struct {
-	CapitalGainsTotal      float64
-	CapitalGainsYearTotals map[int]float64
-	GrossIncomeTotal       float64
-	GrossIncomeByYear      map[int]float64
+	CapitalGainsTotal      decimal_opt.DecimalOpt
+	CapitalGainsYearTotals map[int]decimal_opt.DecimalOpt
+	GrossIncomeTotal       decimal.Decimal
+	GrossIncomeByYear      map[int]decimal.Decimal
 }
 
 func (g *CumulativeCapitalGains) CapitalGainsYearTotalsKeysSorted() []int {
-	years := util.IntFloat64MapKeys(g.CapitalGainsYearTotals)
+	years := util.IntDecimalOptMapKeys(g.CapitalGainsYearTotals)
 	sort.Ints(years)
 	return years
 }
 
 func CalcSecurityCumulativeCapitalGains(deltas []*TxDelta) *CumulativeCapitalGains {
-	cc := &CumulativeCapitalGains{
-		CapitalGainsYearTotals: map[int]float64{},
-		GrossIncomeByYear:      map[int]float64{},
-	}
+	var capGainsTotal decimal_opt.DecimalOpt
+	capGainsYearTotals := util.NewDefaultMap[int, decimal_opt.DecimalOpt](
+		func(_ int) decimal_opt.DecimalOpt { return decimal_opt.Zero })
+	var grossIncomeTotal decimal.Decimal
+	grossIncomeYearTotals := util.NewDefaultMap[int, decimal.Decimal](
+		func(_ int) decimal.Decimal { return decimal.Zero })
+
 	for _, d := range deltas {
-		if !math.IsNaN(d.CapitalGain) {
-			cc.CapitalGainsTotal += d.CapitalGain
-			cc.CapitalGainsYearTotals[d.Tx.SettlementDate.Year()] += d.CapitalGain
-			cc.GrossIncomeTotal += d.GrossIncome
-			cc.GrossIncomeByYear[d.Tx.SettlementDate.Year()] += d.GrossIncome
+		if !d.CapitalGain.IsNull {
+			capGainsTotal = capGainsTotal.Add(d.CapitalGain)
+			yearTotalSoFar := capGainsYearTotals.Get(d.Tx.SettlementDate.Year())
+			capGainsYearTotals.Set(d.Tx.SettlementDate.Year(), yearTotalSoFar.Add(d.CapitalGain))
+		}
+		if !d.CapitalGain.IsNull || !d.GrossIncome.IsZero() {
+			grossIncomeTotal = grossIncomeTotal.Add(d.GrossIncome)
+			yearTotalSoFar := grossIncomeYearTotals.Get(d.Tx.SettlementDate.Year())
+			grossIncomeYearTotals.Set(d.Tx.SettlementDate.Year(), yearTotalSoFar.Add(d.GrossIncome))
 		}
 	}
-	return cc
+	return &CumulativeCapitalGains{
+		CapitalGainsTotal:      capGainsTotal,
+		CapitalGainsYearTotals: capGainsYearTotals.EjectMap(),
+		GrossIncomeTotal:       grossIncomeTotal,
+		GrossIncomeByYear:      grossIncomeYearTotals.EjectMap(),
+	}
 }
 
 func CalcCumulativeCapitalGains(secGains map[string]*CumulativeCapitalGains) *CumulativeCapitalGains {
-	cc := &CumulativeCapitalGains{
-		CapitalGainsYearTotals: map[int]float64{},
-		GrossIncomeByYear:      map[int]float64{},
-	}
+	var capGainsTotal decimal_opt.DecimalOpt
+	capGainsYearTotals := util.NewDefaultMap[int, decimal_opt.DecimalOpt](
+		func(_ int) decimal_opt.DecimalOpt { return decimal_opt.Zero })
+	var grossIncomeTotal decimal.Decimal
+	grossIncomeYearTotals := util.NewDefaultMap[int, decimal.Decimal](
+		func(_ int) decimal.Decimal { return decimal.Zero })
+
 	for _, gains := range secGains {
-		cc.CapitalGainsTotal += gains.CapitalGainsTotal
-		cc.GrossIncomeTotal += gains.GrossIncomeTotal
+		capGainsTotal = capGainsTotal.Add(gains.CapitalGainsTotal)
+		grossIncomeTotal = grossIncomeTotal.Add(gains.GrossIncomeTotal)
 		for year, yearGains := range gains.CapitalGainsYearTotals {
-			cc.CapitalGainsYearTotals[year] += yearGains
+			yearTotalSoFar := capGainsYearTotals.Get(year)
+			capGainsYearTotals.Set(year, yearTotalSoFar.Add(yearGains))
 		}
 		for year, gross := range gains.GrossIncomeByYear {
-			cc.GrossIncomeByYear[year] += gross
+			yearTotalSoFar := grossIncomeYearTotals.Get(year)
+			grossIncomeYearTotals.Set(year, yearTotalSoFar.Add(gross))
 		}
 	}
-	return cc
+
+	return &CumulativeCapitalGains{
+		CapitalGainsTotal:      capGainsTotal,
+		CapitalGainsYearTotals: capGainsYearTotals.EjectMap(),
+		GrossIncomeTotal:       grossIncomeTotal,
+		GrossIncomeByYear:      grossIncomeYearTotals.EjectMap(),
+	}
 }

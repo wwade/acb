@@ -4,13 +4,15 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"math"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	"github.com/tsiemens/acb/util"
 )
 
@@ -30,26 +32,37 @@ func NaNString() string {
 	return "NaN"
 }
 
-func (h PrintHelper) CurrStr(val float64) string {
+func (h PrintHelper) CurrStr(val decimal.Decimal) string {
+	v, err := strconv.ParseFloat(val.String(), 64)
+	if err != nil {
+		panic(err)
+	}
 	p := message.NewPrinter(language.English)
 	if h.PrintAllDecimals {
-		return p.Sprintf("%f", val)
+		return p.Sprintf("%f", v)
 	}
-	return p.Sprintf("%.2f", val)
+	return p.Sprintf("%.2f", v)
 }
 
-func (h PrintHelper) DollarStr(val float64) string {
-	if math.IsNaN(val) {
+func (h PrintHelper) OptCurrStr(val decimal_opt.DecimalOpt) string {
+	if val.IsNull {
+		return val.String()
+	}
+	return h.CurrStr(val.Decimal)
+}
+
+func (h PrintHelper) DollarStr(val decimal_opt.DecimalOpt) string {
+	if val.IsNull {
 		return NaNString()
 	}
-	return "$" + h.CurrStr(val)
+	return "$" + h.OptCurrStr(val)
 }
 
-func (h PrintHelper) CurrWithFxStr(val float64, curr Currency, rateToLocal float64) string {
+func (h PrintHelper) CurrWithFxStr(val decimal.Decimal, curr Currency, rateToLocal decimal.Decimal) string {
 	if curr == DEFAULT_CURRENCY {
-		return h.DollarStr(val)
+		return h.DollarStr(decimal_opt.New(val))
 	}
-	return fmt.Sprintf("%s\n(%s %s)", h.DollarStr(val*rateToLocal), h.CurrStr(val), curr)
+	return fmt.Sprintf("%s\n(%s %s)", h.DollarStr(decimal_opt.New(val.Mul(rateToLocal))), h.CurrStr(val), curr)
 }
 
 func strOrDash(useStr bool, str string) string {
@@ -58,19 +71,18 @@ func strOrDash(useStr bool, str string) string {
 	}
 	return "-"
 }
-
-func (h PrintHelper) PlusMinusDollar(val float64, showPlus bool) string {
-	if math.IsNaN(val) {
+func (h PrintHelper) PlusMinusDollar(val decimal_opt.DecimalOpt, showPlus bool) string {
+	if val.IsNull {
 		return NaNString()
 	}
-	if val < 0.0 {
-		return fmt.Sprintf("-$%s", h.CurrStr(val*-1.0))
+	if val.IsNegative() {
+		return fmt.Sprintf("-$%s", h.OptCurrStr(val.Neg()))
 	}
 	plus := ""
 	if showPlus {
 		plus = "+"
 	}
-	return fmt.Sprintf("%s$%s", plus, h.CurrStr(val))
+	return fmt.Sprintf("%s$%s", plus, h.OptCurrStr(val))
 }
 
 type RenderTable struct {
@@ -98,14 +110,14 @@ func RenderTxTableModel(
 		superficialLossAsterix := ""
 		specifiedSflIsForced := d.Tx.SpecifiedSuperficialLoss.Present() &&
 			d.Tx.SpecifiedSuperficialLoss.MustGet().Force
-		if d.SuperficialLoss != 0.0 && !math.IsNaN(d.SuperficialLoss) {
+		if d.IsSuperficialLoss() {
 			extraSflNoteStr := ""
 			if d.PotentiallyOverAppliedSfl {
 				extraSflNoteStr = " [1]"
 			}
 
 			superficialLossAsterix = fmt.Sprintf(
-				" *\n(SfL %s%s; %d/%d%s)",
+				" *\n(SfL %s%s; %s/%s%s)",
 				ph.PlusMinusDollar(d.SuperficialLoss, false),
 				util.Tern[string](specifiedSflIsForced, "!", ""),
 				d.SuperficialLossRatio.Numerator,
@@ -117,9 +129,9 @@ func RenderTxTableModel(
 		}
 		tx := d.Tx
 
-		var preAcbPerShare float64 = 0.0
-		if tx.Action == SELL && d.PreStatus.ShareBalance > 0 {
-			preAcbPerShare = d.PreStatus.TotalAcb / float64(d.PreStatus.ShareBalance)
+		var preAcbPerShare decimal_opt.DecimalOpt
+		if tx.Action == SELL && d.PreStatus.ShareBalance.IsPositive() {
+			preAcbPerShare = d.PreStatus.TotalAcb.DivD(d.PreStatus.ShareBalance)
 		}
 
 		var affiliateName string
@@ -131,24 +143,24 @@ func RenderTxTableModel(
 
 		row := []string{d.Tx.Security, tx.TradeDate.String(), tx.SettlementDate.String(), tx.Action.String(),
 			// Amount
-			ph.CurrWithFxStr(float64(tx.Shares)*tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
-			fmt.Sprintf("%d", tx.Shares),
+			ph.CurrWithFxStr(tx.Shares.Mul(tx.AmountPerShare), tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
+			tx.Shares.String(),
 			ph.CurrWithFxStr(tx.AmountPerShare, tx.TxCurrency, tx.TxCurrToLocalExchangeRate),
 			// ACB of sale
-			strOrDash(tx.Action == SELL, ph.DollarStr(preAcbPerShare*float64(tx.Shares))),
+			strOrDash(tx.Action == SELL, ph.DollarStr(preAcbPerShare.MulD(tx.Shares))),
 			// Commission
-			strOrDash(tx.Commission != 0.0,
+			strOrDash(!tx.Commission.IsZero(),
 				ph.CurrWithFxStr(tx.Commission, tx.CommissionCurrency, tx.CommissionCurrToLocalExchangeRate)),
 			// Cap gains
 			strOrDash(tx.Action == SELL, ph.PlusMinusDollar(d.CapitalGain, false)+superficialLossAsterix),
-			util.Tern(d.PostStatus.ShareBalance != d.PostStatus.AllAffiliatesShareBalance,
-				fmt.Sprintf("%d / %d", d.PostStatus.ShareBalance, d.PostStatus.AllAffiliatesShareBalance),
-				fmt.Sprintf("%d", d.PostStatus.ShareBalance)),
+			util.Tern(d.PostStatus.ShareBalance.Equal(d.PostStatus.AllAffiliatesShareBalance),
+				d.PostStatus.ShareBalance.String(),
+				fmt.Sprintf("%s / %s", d.PostStatus.ShareBalance, d.PostStatus.AllAffiliatesShareBalance)),
 			ph.PlusMinusDollar(d.AcbDelta(), true),
 			ph.DollarStr(d.PostStatus.TotalAcb),
 			// Acb per share
-			strOrDash(d.PostStatus.ShareBalance > 0.0,
-				ph.DollarStr(d.PostStatus.TotalAcb/float64(d.PostStatus.ShareBalance))),
+			strOrDash(d.PostStatus.ShareBalance.IsPositive(),
+				ph.DollarStr(d.PostStatus.TotalAcb.DivD(d.PostStatus.ShareBalance))),
 			affiliateName,
 			tx.Memo,
 		}

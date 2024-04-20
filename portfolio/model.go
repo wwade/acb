@@ -1,11 +1,15 @@
 package portfolio
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/tsiemens/acb/date"
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	"github.com/tsiemens/acb/util"
 )
 
@@ -63,6 +67,15 @@ func (a *Affiliate) Registered() bool {
 
 func (a *Affiliate) Default() bool {
 	return strings.HasPrefix(a.Id(), "default")
+}
+
+// Technically redundant, but used for cmp, since attrs are unexported
+func (a *Affiliate) Equal(other *Affiliate) bool {
+	return a == other
+}
+
+func (a *Affiliate) String() string {
+	return fmt.Sprintf("%v", *a)
 }
 
 var (
@@ -132,40 +145,74 @@ func (t *AffiliateDedupTable) GetDefaultAffiliate() *Affiliate {
 
 type PortfolioSecurityStatus struct {
 	Security                  string
-	ShareBalance              uint32
-	AllAffiliatesShareBalance uint32
-	// NaN for registered accounts/affiliates.
-	TotalAcb float64
+	ShareBalance              decimal.Decimal
+	AllAffiliatesShareBalance decimal.Decimal
+	TotalAcb                  decimal_opt.DecimalOpt
 }
 
 func NewEmptyPortfolioSecurityStatus(security string) *PortfolioSecurityStatus {
-	return &PortfolioSecurityStatus{Security: security, ShareBalance: 0, TotalAcb: 0.0}
+	return &PortfolioSecurityStatus{Security: security}
 }
 
-func (s *PortfolioSecurityStatus) PerShareAcb() float64 {
-	if s.ShareBalance == 0 {
-		return 0
+func (s *PortfolioSecurityStatus) PerShareAcb() decimal_opt.DecimalOpt {
+	if s.ShareBalance.IsZero() {
+		return decimal_opt.Zero
 	}
-	return s.TotalAcb / float64(s.ShareBalance)
+	return s.TotalAcb.DivD(s.ShareBalance)
 }
 
 type SFLInput struct {
-	SuperficialLoss float64
+	SuperficialLoss decimal_opt.DecimalOpt
 	Force           bool
 }
+
+func (i SFLInput) Equal(other SFLInput) bool {
+	return i.SuperficialLoss.Equal(other.SuperficialLoss) && i.Force == other.Force
+}
+
+func (i SFLInput) String() string {
+	return fmt.Sprintf("%v%s", i.SuperficialLoss, util.Tern(i.Force, " (forced)", ""))
+}
+
+// We want to be able to call .Equal on this value, but it doesn't quite work
+// correctly with the raw Optional (cmp package doesn't seem to work that well with
+// generics).
+type SFLInputOpt struct {
+	util.Optional[SFLInput]
+}
+
+func NewSFLInputOpt(v SFLInput) SFLInputOpt {
+	return SFLInputOpt{util.NewOptional(v)}
+}
+
+func (b SFLInputOpt) Equal(other SFLInputOpt) bool {
+	needEqualityCheck, equal := b.Optional.NeedValueEqualityCheck(other.Optional)
+	if needEqualityCheck {
+		return b.Optional.MustGet().Equal(other.Optional.MustGet())
+	}
+	return equal
+}
+
+func (b SFLInputOpt) String() string {
+	return b.Optional.String()
+}
+
+// TODO the exchange rates here should perhaps be more explicitly optional, but
+// DecimalOpt defaults to zero, rather than unset. We'd want to use Optional, which
+// is less convenient to use. Zero isn't a valid rate ever so it's ok for now.
 
 type Tx struct {
 	Security                          string
 	TradeDate                         date.Date
 	SettlementDate                    date.Date
 	Action                            TxAction
-	Shares                            uint32
-	AmountPerShare                    float64
-	Commission                        float64
+	Shares                            decimal.Decimal
+	AmountPerShare                    decimal.Decimal
+	Commission                        decimal.Decimal
 	TxCurrency                        Currency
-	TxCurrToLocalExchangeRate         float64
+	TxCurrToLocalExchangeRate         decimal.Decimal
 	CommissionCurrency                Currency
-	CommissionCurrToLocalExchangeRate float64
+	CommissionCurrToLocalExchangeRate decimal.Decimal
 	Memo                              string
 	Affiliate                         *Affiliate
 
@@ -177,7 +224,8 @@ type Tx struct {
 	// SfLA Txs following this one, accounting for all shares experiencing the loss.
 	// NOTE: This is always a negative (or zero) value in CAD, so that it matches the
 	// displayed value
-	SpecifiedSuperficialLoss util.Optional[SFLInput]
+	// SpecifiedSuperficialLoss util.Optional[SFLInput]
+	SpecifiedSuperficialLoss SFLInputOpt
 
 	// The absolute order in which the Tx was read from file or entered.
 	// Used as a tiebreak in sorting.
@@ -188,20 +236,31 @@ type TxDelta struct {
 	Tx          *Tx
 	PreStatus   *PortfolioSecurityStatus
 	PostStatus  *PortfolioSecurityStatus
-	CapitalGain float64
-	GrossIncome float64
+	CapitalGain decimal_opt.DecimalOpt
+	GrossIncome decimal.Decimal
 
-	SuperficialLoss float64
+	SuperficialLoss decimal_opt.DecimalOpt
 	// A ratio, representing <N reacquired shares which suffered SFL> / <N sold shares>
-	SuperficialLossRatio      util.Uint32Ratio
+	SuperficialLossRatio      util.DecimalRatio
 	PotentiallyOverAppliedSfl bool
 }
 
-func (d *TxDelta) AcbDelta() float64 {
+func (d *TxDelta) String() string {
+	return fmt.Sprintf(
+		"Tx: %v, PreSt: %v, PostSt: %v, Gain: %v, Sfl: %v, SflR: %v, POASfl: %v",
+		d.Tx, d.PreStatus, d.PostStatus, d.CapitalGain, d.SuperficialLoss,
+		d.SuperficialLossRatio, d.PotentiallyOverAppliedSfl)
+}
+
+func (d *TxDelta) AcbDelta() decimal_opt.DecimalOpt {
 	if d.PreStatus == nil {
 		return d.PostStatus.TotalAcb
 	}
-	return d.PostStatus.TotalAcb - d.PreStatus.TotalAcb
+	return d.PostStatus.TotalAcb.Sub(d.PreStatus.TotalAcb)
+}
+
+func (d *TxDelta) IsSuperficialLoss() bool {
+	return !d.SuperficialLoss.IsNull && !d.SuperficialLoss.IsZero()
 }
 
 type txSorter struct {

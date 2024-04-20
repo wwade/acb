@@ -2,19 +2,28 @@ package test
 
 import (
 	"fmt"
-	"math"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/tsiemens/acb/date"
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	ptf "github.com/tsiemens/acb/portfolio"
 	"github.com/tsiemens/acb/util"
 )
+
+var DFlt = decimal.NewFromFloat
+var DOFlt = decimal_opt.NewFromFloat
+var DInt = decimal.NewFromInt
+var DOInt = decimal_opt.NewFromInt
+var DStr = decimal.RequireFromString
+var DOStr = decimal_opt.RequireFromString
 
 const DefaultTestSecurity string = "FOO"
 
@@ -27,16 +36,16 @@ func mkDate(day int) date.Date {
 	return mkDateYD(2017, day)
 }
 
-func CADSFL(lossVal float64, force bool) util.Optional[ptf.SFLInput] {
-	util.Assert(lossVal <= 0.0)
-	return util.NewOptional[ptf.SFLInput](ptf.SFLInput{lossVal, force})
+func CADSFL(lossVal decimal.Decimal, force bool) ptf.SFLInputOpt {
+	util.Assert(lossVal.LessThanOrEqual(decimal.Zero))
+	return ptf.NewSFLInputOpt(ptf.SFLInput{decimal_opt.New(lossVal), force})
 }
 
 func addTx(tx *ptf.Tx, preTxStatus *ptf.PortfolioSecurityStatus) (*ptf.TxDelta, []*ptf.Tx, error) {
 	txs := []*ptf.Tx{tx}
 	affil := ptf.NonNilTxAffiliate(tx)
 	ptfStatuses := ptf.NewAffiliatePortfolioSecurityStatuses(tx.Security, nil)
-	shareDiff := preTxStatus.AllAffiliatesShareBalance - preTxStatus.ShareBalance
+	shareDiff := preTxStatus.AllAffiliatesShareBalance.Sub(preTxStatus.ShareBalance)
 	// Set up the previous balance to avoid assert
 	dummyId := ptf.GlobalAffiliateDedupTable.DedupedAffiliate("dummy").Id()
 	ptfStatuses.SetLatestPostStatus(dummyId, TPSS{Shares: shareDiff}.X())
@@ -51,7 +60,10 @@ func addTx(tx *ptf.Tx, preTxStatus *ptf.PortfolioSecurityStatus) (*ptf.TxDelta, 
 // Using DEFAULT_CURRENCY in TTx will just result in CAD.
 // If testing actual DEFAULT_CURRENCY, use this.
 const EXP_DEFAULT_CURRENCY ptf.Currency = "EXPLICIT_TEST_DEFAULT_CURRENCY"
-const EXP_FLOAT_ZERO = -0.01010101
+
+// Treat as constant
+var CURRENCY_RATE_DEFAULT = decimal.Decimal{}
+var CURRENCY_RATE_EXPLICIT_ZERO = DFlt(-0.01010101)
 
 // Test Tx
 type TTx struct {
@@ -62,31 +74,42 @@ type TTx struct {
 	SDoY       int       // Day of Year. Convenience for SDate. Must be combined with TYr
 	SDate      date.Date // Defaults to 2 days after TDate/TDay
 	Act        ptf.TxAction
-	Shares     uint32
-	Price      float64
-	Comm       float64
+	Shares     decimal.Decimal
+	Price      decimal.Decimal
+	Comm       decimal.Decimal
 	Curr       ptf.Currency
-	FxRate     float64
+	FxRate     decimal.Decimal
 	CommCurr   ptf.Currency
-	CommFxRate float64
+	CommFxRate decimal.Decimal
 	Memo       string
 	Affiliate  *ptf.Affiliate
 	AffName    string
-	SFL        util.Optional[ptf.SFLInput]
+	SFL        ptf.SFLInputOpt
 	ReadIndex  uint32
 }
 
 // eXpand to full type.
 func (t TTx) X() *ptf.Tx {
-	getFxRate := func(rateArg float64, def float64) float64 {
-		if rateArg == 0.0 {
-			return def
-		} else if rateArg == EXP_FLOAT_ZERO {
-			return 0.0
+	getFxRate := func(rateArg decimal.Decimal, defaultRate decimal.Decimal) decimal.Decimal {
+		// Sanity check
+		util.Assert(CURRENCY_RATE_DEFAULT.IsZero())
+		util.Assert(CURRENCY_RATE_DEFAULT.Equal(decimal.Decimal{}))
+
+		// We want the tests to not need to specify the currency rate all the time,
+		// for convenience. Since struct will init them by default to 0, and this
+		// is generally not a valid value for most transaction types, we can take
+		// advantage of this by treating the default value as unset, and setting
+		// it as expected.
+		// If a test wants to excersize this case, they can use CURRENCY_RATE_EXPLICIT_ZERO
+
+		if rateArg.Equal(CURRENCY_RATE_DEFAULT) {
+			return defaultRate
+		} else if rateArg.Equal(CURRENCY_RATE_EXPLICIT_ZERO) {
+			return decimal.Zero
 		}
 		return rateArg
 	}
-	fxRate := getFxRate(t.FxRate, 1.0)
+	fxRate := getFxRate(t.FxRate, decimal.NewFromInt(1))
 	affiliate := t.Affiliate
 	if affiliate == nil {
 		affiliate = ptf.GlobalAffiliateDedupTable.DedupedAffiliate(t.AffName)
@@ -146,29 +169,29 @@ func (t TTx) X() *ptf.Tx {
 // Test PortfolioSecurityStatus
 type TPSS struct {
 	Sec       string
-	Shares    uint32
-	AllShares uint32
-	TotalAcb  float64
-	AcbPerSh  float64
+	Shares    decimal.Decimal
+	AllShares decimal.Decimal
+	TotalAcb  decimal_opt.DecimalOpt
+	AcbPerSh  decimal_opt.DecimalOpt
 }
 
 // // eXpand to full type.
 func (o TPSS) X() *ptf.PortfolioSecurityStatus {
-	util.Assert(!(o.TotalAcb != 0.0 && o.AcbPerSh != 0.0))
+	util.Assert(!(!o.TotalAcb.IsZero() && !o.AcbPerSh.IsZero()))
 
 	return &ptf.PortfolioSecurityStatus{
 		Security:                  util.Tern(o.Sec == "", DefaultTestSecurity, o.Sec),
 		ShareBalance:              o.Shares,
-		AllAffiliatesShareBalance: util.Tern(o.AllShares > 0, o.AllShares, o.Shares),
-		TotalAcb:                  util.Tern(o.AcbPerSh != 0.0, o.AcbPerSh*float64(o.Shares), o.TotalAcb),
+		AllAffiliatesShareBalance: util.Tern(o.AllShares.IsPositive(), o.AllShares, o.Shares),
+		TotalAcb:                  util.Tern(o.AcbPerSh.IsZero(), o.TotalAcb, o.AcbPerSh.MulD(o.Shares)),
 	}
 }
 
 // Test Delta
 type TDt struct {
 	PostSt                    TPSS
-	Gain                      float64
-	SFL                       float64
+	Gain                      decimal_opt.DecimalOpt
+	SFL                       decimal_opt.DecimalOpt
 	PotentiallyOverAppliedSfl bool
 }
 
@@ -176,29 +199,16 @@ type TDt struct {
 // Validation functions
 // **********************************************************************************
 
-// This will represent NaN, but allow us to actually perform an equality check
-const nanVal float64 = -123.0123456789
-
 const matchingMemoPrefix string = "TEST_MEMO_MATCHES:"
 
 func matchingMemo(pattern string) string {
 	return matchingMemoPrefix + pattern
 }
 
-func SoftTxEq(t *testing.T, exp *ptf.Tx, actual *ptf.Tx) bool {
+func TxDiff(exp, actual *ptf.Tx) string {
 	var expCopy ptf.Tx = *exp
 	var actualCopy ptf.Tx = *actual
 
-	if math.IsNaN(expCopy.AmountPerShare) {
-		// Allow us to do equality check with NaN
-		expCopy.AmountPerShare = nanVal
-	}
-	if math.IsNaN(actualCopy.AmountPerShare) {
-		actualCopy.AmountPerShare = nanVal
-	}
-	if IsAlmostEqual(actualCopy.AmountPerShare, expCopy.AmountPerShare) {
-		expCopy.AmountPerShare = actualCopy.AmountPerShare
-	}
 	// To match the memo using a regex, set the expected memo with matchingMemo()
 	if strings.HasPrefix(expCopy.Memo, matchingMemoPrefix) {
 		pattern := strings.TrimPrefix(expCopy.Memo, matchingMemoPrefix)
@@ -207,7 +217,18 @@ func SoftTxEq(t *testing.T, exp *ptf.Tx, actual *ptf.Tx) bool {
 		}
 	}
 
-	return assert.Equal(t, expCopy, actualCopy)
+	// These for whatever reason refuse to properly render in the cmp diff.
+	// Just do them manually.
+	diffExtra := ""
+	if !expCopy.SpecifiedSuperficialLoss.Equal(actualCopy.SpecifiedSuperficialLoss) {
+		diffExtra = fmt.Sprintf("\nSpecifiedSuperficialLoss %s != %v",
+			expCopy.SpecifiedSuperficialLoss, actualCopy.SpecifiedSuperficialLoss)
+	}
+	return cmp.Diff(expCopy, actualCopy) + diffExtra
+}
+
+func TxTestEqual(exp, actual *ptf.Tx) bool {
+	return TxDiff(exp, actual) == ""
 }
 
 func ValidateTxs(t *testing.T, expTxs []*ptf.Tx, actualTxs []*ptf.Tx) {
@@ -219,89 +240,49 @@ func ValidateTxs(t *testing.T, expTxs []*ptf.Tx, actualTxs []*ptf.Tx) {
 	}
 	for i, tx := range actualTxs {
 		fail := false
-		fail = !SoftTxEq(t, expTxs[i], tx) || fail
+		diff := TxDiff(expTxs[i], tx)
+		fail = diff != ""
 		if fail {
 			for j, _ := range actualTxs {
 				fmt.Println(j, "Tx:", actualTxs[j], "Af:", actualTxs[j].Affiliate.Id())
 			}
-			require.FailNowf(t, "ValidateTxs failed", "Tx %d", i)
+			require.FailNowf(t, "ValidateTxs failed", "Tx %d, diff: %s", i, diff)
 		}
 	}
-}
-
-func SoftStEq(
-	t *testing.T,
-	exp *ptf.PortfolioSecurityStatus, actual *ptf.PortfolioSecurityStatus) bool {
-
-	var expCopy ptf.PortfolioSecurityStatus = *exp
-	var actualCopy ptf.PortfolioSecurityStatus = *actual
-
-	if math.IsNaN(expCopy.TotalAcb) {
-		// Allow us to do equality check with NaN
-		expCopy.TotalAcb = nanVal
-	}
-	if math.IsNaN(actualCopy.TotalAcb) {
-		actualCopy.TotalAcb = nanVal
-	}
-
-	// For the sake of sanity, allow ourselves to specify approximate float values.
-	if IsAlmostEqual(expCopy.TotalAcb, actualCopy.TotalAcb) {
-		expCopy.TotalAcb = actualCopy.TotalAcb
-	}
-
-	return assert.Equal(t, expCopy, actualCopy)
-}
-
-func StEq(
-	t *testing.T,
-	exp *ptf.PortfolioSecurityStatus, actual *ptf.PortfolioSecurityStatus) {
-	if !SoftStEq(t, exp, actual) {
-		t.FailNow()
-	}
-}
-
-func SoftSflAlmostEqual(t *testing.T, expDelta TDt, delta *ptf.TxDelta) bool {
-	if expDelta.SFL != 0.0 {
-		if expDelta.SFL == EXP_FLOAT_ZERO {
-			return SoftAlmostEqual(t, 0.0, delta.SuperficialLoss)
-		} else {
-			return SoftAlmostEqual(t, expDelta.SFL, delta.SuperficialLoss)
-		}
-	}
-	return true
 }
 
 func ValidateDelta(t *testing.T, delta *ptf.TxDelta, expDelta TDt) {
 	fail := false
-	fail = !SoftStEq(t, expDelta.PostSt.X(), delta.PostStatus) || fail
-	fail = !SoftAlmostEqual(t, expDelta.Gain, delta.CapitalGain) || fail
-	fail = !SoftSflAlmostEqual(t, expDelta, delta) || fail
+	statusDiff := cmp.Diff(expDelta.PostSt.X(), delta.PostStatus)
+	fail = statusDiff != "" || fail
+	// fail = !assert.Equal(t, expDelta.PostSt.X(), delta.PostStatus) || fail
+	fail = !expDelta.Gain.Equal(delta.CapitalGain) || fail
+	fail = !expDelta.SFL.Equal(delta.SuperficialLoss) || fail
 	if fail {
-		require.FailNow(t, "ValidateDelta failed")
+		require.FailNow(t, "ValidateDelta failed. PostStatusDiff: "+statusDiff)
 	}
 }
 
 func ValidateDeltas(t *testing.T, deltas []*ptf.TxDelta, expDeltas []TDt) {
 	if len(expDeltas) != len(deltas) {
 		for j, _ := range deltas {
-			fmt.Println(j, "Tx:", deltas[j].Tx, "PostStatus:", deltas[j].PostStatus)
+			fmt.Println(j, "Tx:", deltas[j].Tx, "\n   PostStatus:", deltas[j].PostStatus)
 		}
 		require.Equal(t, len(expDeltas), len(deltas), "Num deltas did not match")
 	}
 	for i, delta := range deltas {
 		fail := false
-		fail = !SoftStEq(t, expDeltas[i].PostSt.X(), delta.PostStatus) || fail
-		fail = !SoftAlmostEqual(t, expDeltas[i].Gain, delta.CapitalGain,
-			"Capital Gains were not almost equal") || fail
-		fail = !SoftSflAlmostEqual(t, expDeltas[i], delta) || fail
+		statusDiff := cmp.Diff(expDeltas[i].PostSt.X(), delta.PostStatus)
+		fail = statusDiff != "" || fail
+		fail = !expDeltas[i].Gain.Equal(delta.CapitalGain) || fail
 		fail = (expDeltas[i].PotentiallyOverAppliedSfl != delta.PotentiallyOverAppliedSfl) || fail
 		if fail {
 			for j, _ := range deltas {
-				fmt.Println(j, "Tx:", deltas[j].Tx, "PostStatus:", deltas[j].PostStatus,
-					"Gain:", deltas[j].CapitalGain, "SFL:", deltas[j].SuperficialLoss,
-					"PotentiallyOverAppliedSfl:", deltas[j].PotentiallyOverAppliedSfl)
+				fmt.Println(j, "Tx:", deltas[j].Tx, "\n   PostStatus:", deltas[j].PostStatus,
+					"\n   Gain:", deltas[j].CapitalGain, "\n   SFL:", deltas[j].SuperficialLoss,
+					"\n   PotentiallyOverAppliedSfl:", deltas[j].PotentiallyOverAppliedSfl)
 			}
-			require.FailNowf(t, "ValidateDeltas failed", "Delta %d", i)
+			require.FailNowf(t, "ValidateDeltas failed", "Delta %d. PostStatus diff: %s", i, statusDiff)
 		}
 	}
 }

@@ -3,8 +3,10 @@ package portfolio
 import (
 	"testing"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/tsiemens/acb/date"
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 )
 
 func TestCalcSecurityCumulativeCapitalGains(t *testing.T) {
@@ -19,8 +21,8 @@ func TestCalcSecurityCumulativeCapitalGains(t *testing.T) {
 	getDelta := func(year uint32, capGain, gross float64) *TxDelta {
 		return &TxDelta{
 			Tx:          getTx(year),
-			CapitalGain: capGain,
-			GrossIncome: gross,
+			CapitalGain: decimal_opt.NewFromFloat(capGain),
+			GrossIncome: decimal.NewFromFloat(gross),
 		}
 	}
 
@@ -34,51 +36,53 @@ func TestCalcSecurityCumulativeCapitalGains(t *testing.T) {
 	}
 
 	cc := CalcSecurityCumulativeCapitalGains(deltas)
-	assert.Equal(t, &CumulativeCapitalGains{
-		CapitalGainsTotal: 100 + 50 + 20 + 200 + 250 + 300,
-		CapitalGainsYearTotals: map[int]float64{
-			2015: 100 + 50 + 20,
-			2016: 200 + 250 + 300,
-		},
-		GrossIncomeTotal: 20 + 10 + 5 + 30 + 40 + 50,
-		GrossIncomeByYear: map[int]float64{
-			2015: 20 + 10 + 5,
-			2016: 30 + 40 + 50,
-		},
-	}, cc)
+
+	assert.Len(t, cc.CapitalGainsYearTotals, 2)
+	assert.Equal(t, decimal.NewFromFloat(100+50+20+200+250+300).String(), cc.CapitalGainsTotal.String())
+	assert.Equal(t, decimal.NewFromFloat(100+50+20).String(), cc.CapitalGainsYearTotals[2015].String())
+	assert.Equal(t, decimal.NewFromFloat(200+250+300).String(), cc.CapitalGainsYearTotals[2016].String())
+
+	assert.Len(t, cc.GrossIncomeByYear, 2)
+	assert.Equal(t, decimal.NewFromFloat(20+10+5+30+40+50).String(), cc.GrossIncomeTotal.String())
+	assert.Equal(t, decimal.NewFromFloat(20+10+5).String(), cc.GrossIncomeByYear[2015].String())
+	assert.Equal(t, decimal.NewFromFloat(30+40+50).String(), cc.GrossIncomeByYear[2016].String())
 }
 
 func TestCalcCumulativeCapitalGains(t *testing.T) {
 	secGains := map[string]*CumulativeCapitalGains{
 		"VXUS": {
-			CapitalGainsTotal: 1000,
-			CapitalGainsYearTotals: map[int]float64{
-				2015: 750,
-				2016: 250,
+			CapitalGainsTotal: decimal_opt.NewFromFloat(1000),
+			CapitalGainsYearTotals: map[int]decimal_opt.DecimalOpt{
+				2015: decimal_opt.NewFromFloat(750),
+				2016: decimal_opt.NewFromFloat(250),
 			},
-			GrossIncomeTotal: 2500,
-			GrossIncomeByYear: map[int]float64{
-				2015: 1500,
-				2016: 1000,
+			GrossIncomeTotal: decimal.NewFromFloat(2500),
+			GrossIncomeByYear: map[int]decimal.Decimal{
+				2015: decimal.NewFromFloat(1500),
+				2016: decimal.NewFromFloat(1000),
 			},
 		},
 		"VTI": {
-			CapitalGainsTotal: 250,
-			CapitalGainsYearTotals: map[int]float64{
-				2015: 50,
-				2016: 200,
+			CapitalGainsTotal: decimal_opt.NewFromFloat(250),
+			CapitalGainsYearTotals: map[int]decimal_opt.DecimalOpt{
+				2015: decimal_opt.NewFromFloat(50),
+				2016: decimal_opt.NewFromFloat(200),
 			},
-			GrossIncomeTotal: 1000,
-			GrossIncomeByYear: map[int]float64{
-				2015: 900,
-				2016: 100,
+			GrossIncomeTotal: decimal.NewFromFloat(1000),
+			GrossIncomeByYear: map[int]decimal.Decimal{
+				2015: decimal.NewFromFloat(900),
+				2016: decimal.NewFromFloat(100),
 			},
 		},
 	}
 
 	cc := CalcCumulativeCapitalGains(secGains)
-	assert.Equal(t, float64(1250), cc.CapitalGainsTotal)
-	assert.Equal(t, float64(3500), cc.GrossIncomeTotal)
-	assert.Equal(t, map[int]float64{2015: 750 + 50, 2016: 250 + 200}, cc.CapitalGainsYearTotals)
-	assert.Equal(t, map[int]float64{2015: 1500 + 900, 2016: 1000 + 100}, cc.GrossIncomeByYear)
+	assert.Equal(t, decimal.NewFromFloat(1250).String(), cc.CapitalGainsTotal.String())
+	assert.Equal(t, decimal.NewFromFloat(3500).String(), cc.GrossIncomeTotal.String())
+	assert.Len(t, cc.CapitalGainsYearTotals, 2)
+	assert.Equal(t, decimal.NewFromFloat(750+50).String(), cc.CapitalGainsYearTotals[2015].String())
+	assert.Equal(t, decimal.NewFromFloat(250+200).String(), cc.CapitalGainsYearTotals[2016].String())
+	assert.Len(t, cc.GrossIncomeByYear, 2)
+	assert.Equal(t, decimal.NewFromFloat(1500+900).String(), cc.GrossIncomeByYear[2015].String())
+	assert.Equal(t, decimal.NewFromFloat(1000+100).String(), cc.GrossIncomeByYear[2016].String())
 }

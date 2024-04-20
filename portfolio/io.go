@@ -5,12 +5,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/tsiemens/acb/date"
+	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	"github.com/tsiemens/acb/fx"
-	"github.com/tsiemens/acb/util"
 )
 
 const (
@@ -51,9 +52,9 @@ func init() {
 func DefaultTx() *Tx {
 	return &Tx{
 		Security: "", SettlementDate: date.Date{}, Action: NO_ACTION,
-		Shares: 0, AmountPerShare: 0.0, Commission: 0.0,
-		TxCurrency: DEFAULT_CURRENCY, TxCurrToLocalExchangeRate: 0.0,
-		CommissionCurrency: DEFAULT_CURRENCY, CommissionCurrToLocalExchangeRate: 0.0,
+		Shares: decimal.Zero, AmountPerShare: decimal.Zero, Commission: decimal.Zero,
+		TxCurrency: DEFAULT_CURRENCY, TxCurrToLocalExchangeRate: decimal.Zero,
+		CommissionCurrency: DEFAULT_CURRENCY, CommissionCurrToLocalExchangeRate: decimal.Zero,
 		Affiliate: GlobalAffiliateDedupTable.GetDefaultAffiliate(),
 	}
 }
@@ -74,13 +75,13 @@ func CheckTxSanity(tx *Tx) error {
 func fixupTxFx(tx *Tx, rl *fx.RateLoader) error {
 	if tx.TxCurrency == DEFAULT_CURRENCY ||
 		tx.TxCurrency == CAD {
-		tx.TxCurrToLocalExchangeRate = 1.0
+		tx.TxCurrToLocalExchangeRate = decimal.NewFromInt(1)
 	}
 	if tx.CommissionCurrency == DEFAULT_CURRENCY {
 		tx.CommissionCurrency = tx.TxCurrency
 	}
 
-	if tx.TxCurrToLocalExchangeRate == 0.0 {
+	if tx.TxCurrToLocalExchangeRate.IsZero() {
 		if tx.TxCurrency != USD {
 			return fmt.Errorf("Unsupported auto-FX for %s", tx.TxCurrency)
 		}
@@ -92,10 +93,10 @@ func fixupTxFx(tx *Tx, rl *fx.RateLoader) error {
 	}
 
 	if tx.TxCurrency == tx.CommissionCurrency &&
-		tx.CommissionCurrToLocalExchangeRate == 0.0 {
+		tx.CommissionCurrToLocalExchangeRate.IsZero() {
 		// If this didn't get set, make it match the other.
 		tx.CommissionCurrToLocalExchangeRate = tx.TxCurrToLocalExchangeRate
-	} else if tx.CommissionCurrToLocalExchangeRate == 0.0 {
+	} else if tx.CommissionCurrToLocalExchangeRate.IsZero() {
 		if tx.TxCurrency != USD {
 			return fmt.Errorf("Unsupported auto-FX for %s", tx.TxCurrency)
 		}
@@ -210,16 +211,16 @@ func parseAction(data string, tx *Tx) error {
 }
 
 func parseShares(data string, tx *Tx) error {
-	shares, err := strconv.ParseUint(data, 10, 32)
+	shares, err := decimal.NewFromString(data)
 	if err != nil {
 		return fmt.Errorf("Error parsing # shares: %v", err)
 	}
-	tx.Shares = uint32(shares)
+	tx.Shares = shares
 	return nil
 }
 
 func parseAmountPerShare(data string, tx *Tx) error {
-	aps, err := strconv.ParseFloat(data, 64)
+	aps, err := decimal.NewFromString(data)
 	if err != nil {
 		return fmt.Errorf("Error parsing price/share: %v", err)
 	}
@@ -228,10 +229,10 @@ func parseAmountPerShare(data string, tx *Tx) error {
 }
 
 func parseCommission(data string, tx *Tx) error {
-	var c float64 = 0.0
+	var c decimal.Decimal
 	var err error
 	if data != "" {
-		c, err = strconv.ParseFloat(data, 64)
+		c, err = decimal.NewFromString(data)
 		if err != nil {
 			return fmt.Errorf("Error parsing commission: %v", err)
 		}
@@ -246,10 +247,10 @@ func parseTxCurr(data string, tx *Tx) error {
 }
 
 func parseTxFx(data string, tx *Tx) error {
-	var fx float64 = 0.0
+	var fx decimal.Decimal
 	var err error
 	if data != "" {
-		fx, err = strconv.ParseFloat(data, 64)
+		fx, err = decimal.NewFromString(data)
 		if err != nil {
 			return fmt.Errorf("Error parsing exchange rate: %v", err)
 		}
@@ -264,10 +265,10 @@ func parseCommissionCurr(data string, tx *Tx) error {
 }
 
 func parseCommissionFx(data string, tx *Tx) error {
-	var fx float64 = 0.0
+	var fx decimal.Decimal
 	var err error
 	if data != "" {
-		fx, err = strconv.ParseFloat(data, 64)
+		fx, err = decimal.NewFromString(data)
 		if err != nil {
 			return fmt.Errorf("Error parsing commission exchange rate: %v", err)
 		}
@@ -286,16 +287,16 @@ func parseSuperficialLoss(data string, tx *Tx) error {
 		}
 	}
 
-	sfl, err := strconv.ParseFloat(data, 64)
+	sfl, err := decimal.NewFromString(data)
 	if data != "" {
 		if err != nil {
 			return fmt.Errorf("Error parsing superficial loss: %v", err)
 		}
-		if sfl > 0.0 {
+		if sfl.IsPositive() {
 			return fmt.Errorf(
-				"Error: superficial loss must be specified as a non-positive value: %f", sfl)
+				"Error: superficial loss must be specified as a non-positive value: %v", sfl.String())
 		}
-		tx.SpecifiedSuperficialLoss = util.NewOptional[SFLInput](SFLInput{sfl, forceFlag})
+		tx.SpecifiedSuperficialLoss = NewSFLInputOpt(SFLInput{decimal_opt.New(sfl), forceFlag})
 	}
 	return nil
 }
@@ -338,10 +339,10 @@ func ToCsvString(txs []*Tx) string {
 		}
 		return string(curr)
 	}
-	rateIsExplicit := func(curr Currency, rate float64) bool {
-		if rate == 0.0 {
+	rateIsExplicit := func(curr Currency, rate decimal.Decimal) bool {
+		if rate.IsZero() {
 			return false
-		} else if (curr == DEFAULT_CURRENCY || curr == CAD) && rate == 1.0 {
+		} else if (curr == DEFAULT_CURRENCY || curr == CAD) && rate.Equal(decimal.NewFromInt(1)) {
 			return false
 		}
 		return true
@@ -351,15 +352,15 @@ func ToCsvString(txs []*Tx) string {
 		txRate := ""
 		commRate := ""
 		if rateIsExplicit(tx.TxCurrency, tx.TxCurrToLocalExchangeRate) {
-			txRate = fmt.Sprintf("%f", tx.TxCurrToLocalExchangeRate)
+			txRate = tx.TxCurrToLocalExchangeRate.String()
 		}
 		if rateIsExplicit(tx.CommissionCurrency, tx.CommissionCurrToLocalExchangeRate) {
-			commRate = fmt.Sprintf("%f", tx.CommissionCurrToLocalExchangeRate)
+			commRate = tx.CommissionCurrToLocalExchangeRate.String()
 		}
 		sfl := ""
 		if tx.SpecifiedSuperficialLoss.Present() {
 			sflVal := tx.SpecifiedSuperficialLoss.MustGet()
-			sfl = fmt.Sprintf("%f", sflVal.SuperficialLoss)
+			sfl = sflVal.SuperficialLoss.String()
 			if sflVal.Force {
 				sfl += "!"
 			}
@@ -370,9 +371,9 @@ func ToCsvString(txs []*Tx) string {
 			tx.TradeDate.String(),
 			tx.SettlementDate.String(),
 			tx.Action.String(),
-			fmt.Sprintf("%d", tx.Shares),
-			fmt.Sprintf("%f", tx.AmountPerShare),
-			fmt.Sprintf("%f", tx.Commission),
+			tx.Shares.String(),
+			tx.AmountPerShare.String(),
+			tx.Commission.String(),
 			currString(tx.TxCurrency),
 			txRate,
 			currString(tx.CommissionCurrency),

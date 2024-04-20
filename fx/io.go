@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/tsiemens/acb/date"
 	"github.com/tsiemens/acb/log"
 	"github.com/tsiemens/acb/util"
@@ -104,14 +106,14 @@ func (l *JsonRemoteRateLoader) GetRemoteUsdCadRates(year uint32) ([]DailyRate, e
 		}
 
 		if usdCadNoonVal != 0.0 {
-			dRate = DailyRate{date, usdCadNoonVal}
+			dRate = DailyRate{date, decimal.NewFromFloat(usdCadNoonVal)}
 		} else {
 			usdCadVal, err := obs.UsdCad.Val()
 			if err != nil {
 				l.ErrPrinter.Ln("Failed to parse USDCAD rate for", date, ":", obs.UsdCad.ValStr)
 				continue
 			}
-			dRate = DailyRate{date, 1.0 / usdCadVal}
+			dRate = DailyRate{date, decimal.NewFromInt(1).Div(decimal.NewFromFloat(usdCadVal))}
 		}
 		rates = append(rates, dRate)
 	}
@@ -146,14 +148,15 @@ func (c *MemRatesCacheAccessor) GetUsdCadRates(year uint32) ([]DailyRate, error)
 
 type CsvRatesCache struct {
 	ErrPrinter log.ErrorPrinter
+	Path       string
 }
 
 func (c *CsvRatesCache) WriteRates(year uint32, rates []DailyRate) error {
-	return WriteRatesToCsv(year, rates)
+	return WriteRatesToCsv(c.Path, year, rates)
 }
 
 func (c *CsvRatesCache) GetUsdCadRates(year uint32) ([]DailyRate, error) {
-	file, err := ratesCsvFile(year, false)
+	file, err := ratesCsvFile(c.Path, year, false)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +173,7 @@ func FillInUnknownDayRates(rates []DailyRate, year uint32) []DailyRate {
 	dateToFill := date.New(year, time.January, 1)
 	for _, rate := range rates {
 		for dateToFill.Before(rate.Date) {
-			filledRates = append(filledRates, DailyRate{dateToFill, 0.0})
+			filledRates = append(filledRates, DailyRate{dateToFill, decimal.Zero})
 			dateToFill = dateToFill.AddDays(1)
 		}
 		filledRates = append(filledRates, rate)
@@ -179,7 +182,7 @@ func FillInUnknownDayRates(rates []DailyRate, year uint32) []DailyRate {
 
 	today := date.Today()
 	for dateToFill.Before(today) && uint32(dateToFill.Year()) == year {
-		filledRates = append(filledRates, DailyRate{dateToFill, 0.0})
+		filledRates = append(filledRates, DailyRate{dateToFill, decimal.Zero})
 		dateToFill = dateToFill.AddDays(1)
 	}
 	return filledRates
@@ -201,7 +204,7 @@ func (c *CsvRatesCache) getRatesFromCsv(r io.Reader) ([]DailyRate, error) {
 			c.ErrPrinter.Ln("Unable to parse date:", err)
 			continue
 		}
-		rate, err := strconv.ParseFloat(record[1], 64)
+		rate, err := decimal.NewFromString(record[1])
 		if err != nil {
 			c.ErrPrinter.Ln("Unable to parse rate:", err)
 			continue
@@ -214,7 +217,7 @@ func (c *CsvRatesCache) getRatesFromCsv(r io.Reader) ([]DailyRate, error) {
 	return rates, nil
 }
 
-func HomeDirFile(fname string) (string, error) {
+func HomeDirPath() (string, error) {
 	const dir = ".acb"
 	usr, err := user.Current()
 	if err != nil {
@@ -222,15 +225,17 @@ func HomeDirFile(fname string) (string, error) {
 	}
 	dirPath := filepath.Join(usr.HomeDir, dir)
 	os.MkdirAll(dirPath, 0700)
-	return filepath.Join(dirPath, url.QueryEscape(fname)), err
+	return dirPath, err
 }
 
-func ratesCsvFile(year uint32, write bool) (*os.File, error) {
-	preFname := fmt.Sprintf("rates-%d.csv", year)
-	fname, err := HomeDirFile(preFname)
-	if err != nil {
-		return nil, err
+func ratesCsvFile(path string, year uint32, write bool) (*os.File, error) {
+	if path == "" {
+		return nil, fmt.Errorf("cache path is empty")
 	}
+
+	fname := fmt.Sprintf("rates-%d.csv", year)
+	fname = filepath.Join(path, url.QueryEscape(fname))
+
 	if write {
 		return os.OpenFile(fname, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 	}
@@ -242,9 +247,9 @@ func rateDateCsvStr(r DailyRate) string {
 	return fmt.Sprintf(csvPrintTimeFmt, year, month, day)
 }
 
-func WriteRatesToCsv(year uint32, rates []DailyRate) (err error) {
+func WriteRatesToCsv(path string, year uint32, rates []DailyRate) (err error) {
 	err = nil
-	file, err := ratesCsvFile(year, true)
+	file, err := ratesCsvFile(path, year, true)
 	if err != nil {
 		return
 	}
@@ -257,7 +262,7 @@ func WriteRatesToCsv(year uint32, rates []DailyRate) (err error) {
 
 	csvW := csv.NewWriter(file)
 	for _, rate := range rates {
-		row := []string{rateDateCsvStr(rate), fmt.Sprintf("%f", rate.ForeignToLocalRate)}
+		row := []string{rateDateCsvStr(rate), rate.ForeignToLocalRate.String()}
 		err = csvW.Write(row)
 		if err != nil {
 			return
@@ -381,7 +386,7 @@ func (cr *RateLoader) findUsdCadPrecedingRelevantSpotRate(
 		"from the preceding day for which such a rate is quoted should be " +
 		"used if no rate is quoted on the day the trade."
 
-	util.Assertf(foundRate == DailyRate{tradeDate, 0.0},
+	util.Assertf(foundRate.Equal(DailyRate{tradeDate, decimal.Zero}),
 		"findUsdCadPrecedingRelevantSpotRate: rate for %s must be explicitly "+
 			"marked as 'markets closed' with a rate of zero\n",
 		tradeDate)
@@ -395,7 +400,7 @@ func (cr *RateLoader) findUsdCadPrecedingRelevantSpotRate(
 		if err != nil {
 			break
 		}
-		if rate.ForeignToLocalRate != 0.0 {
+		if !rate.ForeignToLocalRate.IsZero() {
 			return rate, nil
 		}
 	}
@@ -437,7 +442,7 @@ func (cr *RateLoader) GetExactUsdCadRate(tradeDate date.Date) (DailyRate, error)
 func (cr *RateLoader) GetEffectiveUsdCadRate(tradeDate date.Date) (DailyRate, error) {
 	rate, err := cr.GetExactUsdCadRate(tradeDate)
 	if err == nil {
-		if rate.ForeignToLocalRate == 0.0 {
+		if rate.ForeignToLocalRate.IsZero() {
 			rate, err = cr.findUsdCadPrecedingRelevantSpotRate(tradeDate, rate)
 			if err == nil {
 				return rate, nil
