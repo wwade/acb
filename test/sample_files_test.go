@@ -26,6 +26,7 @@ func validateSampleCsvFile(rq *require.Assertions, csvPath string) {
 		app.LegacyOptions{},
 		// fx.NewMemRatesCacheAccessor(),
 		&fx.CsvRatesCache{ErrPrinter: errPrinter},
+		"",
 		errPrinter,
 	)
 	rq.Nil(err)

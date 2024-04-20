@@ -158,7 +158,7 @@ type AppRenderResult struct {
 	AggregateGainsTable *ptf.RenderTable
 }
 
-func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
+func printCosts(deltasBySec map[string]*SecurityDeltas, full bool, csvOutDir string) {
 	var allDeltas []*ptf.TxDelta
 	ph := ptf.PrintHelper{
 		PrintAllDecimals: full,
@@ -217,12 +217,15 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 		tbl.Rows = append(tbl.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
 	}
 
-	fp, err := os.Create("total-costs.csv")
-	if err != nil {
-		panic(err)
+	if csvOutDir != "" {
+		fp, err := os.Create(filepath.Join(csvOutDir, "total-costs.csv"))
+		if err != nil {
+			panic(err)
+		}
+
+		ptf.PrintRenderTable("", &tbl, fp)
+		fp.Close()
 	}
-	ptf.PrintRenderTable("", &tbl, fp)
-	fp.Close()
 
 	yearMax := map[int]costinfo{}
 	year := costs[0].date.Year()
@@ -266,11 +269,14 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool) {
 			}, ind...),
 		)
 	}
-	if fp, err = os.Create("yearly-max-costs.csv"); err != nil {
-		panic(err)
+	if csvOutDir != "" {
+		fp, err := os.Create(filepath.Join(csvOutDir, "yearly-max-costs.csv"))
+		if err != nil {
+			panic(err)
+		}
+		ptf.PrintRenderTable("", &tbl, fp)
+		fp.Close()
 	}
-	ptf.PrintRenderTable("", &tbl, fp)
-	fp.Close()
 }
 
 func RunAcbAppToRenderModel(
@@ -280,6 +286,7 @@ func RunAcbAppToRenderModel(
 	renderFullDollarValues bool,
 	legacyOptions LegacyOptions,
 	ratesCache fx.RatesCache,
+	csvOutDir string,
 	errPrinter log.ErrorPrinter) (*AppRenderResult, error) {
 
 	deltasBySec, err := RunAcbAppToDeltaModels(
@@ -289,7 +296,7 @@ func RunAcbAppToRenderModel(
 		return nil, err
 	}
 
-	printCosts(deltasBySec, renderFullDollarValues)
+	printCosts(deltasBySec, renderFullDollarValues, csvOutDir)
 	gains := getCumulativeCapitalGains(deltasBySec)
 
 	secModels := make(map[string]*ptf.RenderTable)
@@ -386,7 +393,7 @@ func RunAcbAppToWriter(
 
 	renderRes, err := RunAcbAppToRenderModel(
 		csvFileReaders, allInitStatus, forceDownload, renderFullDollarValues,
-		legacyOptions, ratesCache, errPrinter,
+		legacyOptions, ratesCache, "", errPrinter,
 	)
 
 	if err != nil {
@@ -407,10 +414,15 @@ func RunAcbAppToCSV(
 	ratesCache fx.RatesCache,
 	errPrinter log.ErrorPrinter,
 ) bool {
+	if err := os.MkdirAll(csvOutDir, os.ModePerm); err != nil {
+		errPrinter.Ln(fmt.Sprintf("Error %T %v", err, err))
+		return false
+	}
+
 	const renderFullDollarValues = true
 	renderRes, err := RunAcbAppToRenderModel(
 		csvFileReaders, allInitStatus, forceDownload, renderFullDollarValues,
-		legacyOptions, ratesCache, errPrinter,
+		legacyOptions, ratesCache, csvOutDir, errPrinter,
 	)
 
 	if err != nil {
@@ -433,11 +445,6 @@ func RunAcbAppToCSV(
 		errPrinter.Ln("Error: no securities found in input")
 		return false
 	}
-	if err := os.MkdirAll(csvOutDir, os.ModePerm); err != nil {
-		errPrinter.Ln(fmt.Sprintf("Error %T %v", err, err))
-		return false
-	}
-
 	i := 0
 
 	for _, sec := range secs {

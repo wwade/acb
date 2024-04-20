@@ -78,6 +78,7 @@ func TestSameDayBuySells(t *testing.T) {
 			false, false,
 			app.LegacyOptions{},
 			fx.NewMemRatesCacheAccessor(),
+			"",
 			&log.StderrErrorPrinter{},
 		)
 
@@ -101,6 +102,7 @@ func TestNegativeStocks(t *testing.T) {
 		false, false,
 		app.LegacyOptions{},
 		fx.NewMemRatesCacheAccessor(),
+		"",
 		&log.StderrErrorPrinter{},
 	)
 
@@ -125,6 +127,7 @@ func TestSanitizedSecurityNames(t *testing.T) {
 		false, false,
 		app.LegacyOptions{},
 		fx.NewMemRatesCacheAccessor(),
+		"",
 		&log.StderrErrorPrinter{},
 	)
 
