@@ -161,6 +161,13 @@ type AppRenderResult struct {
 	AggregateGainsTable *ptf.RenderTable
 }
 
+func mustDecimal(opt decimal_opt.DecimalOpt) decimal.Decimal {
+	if opt.IsNull {
+		panic(fmt.Errorf("unexpected null opt decimal %#v", opt))
+	}
+	return opt.Decimal
+}
+
 func printCosts(deltasBySec map[string]*SecurityDeltas, full bool, csvOutDir string) {
 	var allDeltas []*ptf.TxDelta
 	ph := ptf.PrintHelper{
@@ -173,11 +180,11 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool, csvOutDir str
 		}
 	}
 
-	curCost := map[string]float64{}
+	curCost := map[string]decimal_opt.DecimalOpt{}
 	type costinfo struct {
 		date    date.Date
-		total   float64
-		secCost map[string]float64
+		total   decimal_opt.DecimalOpt
+		secCost map[string]decimal_opt.DecimalOpt
 	}
 	var costs []costinfo
 	sort.Slice(allDeltas, func(i, j int) bool {
@@ -187,11 +194,11 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool, csvOutDir str
 		curCost[d.PostStatus.Security] = d.PostStatus.TotalAcb
 		inf := costinfo{
 			date:    d.Tx.SettlementDate,
-			total:   0,
-			secCost: map[string]float64{},
+			total:   decimal_opt.Zero,
+			secCost: map[string]decimal_opt.DecimalOpt{},
 		}
 		for s, v := range curCost {
-			inf.total += v
+			inf.total = inf.total.Add(v)
 			inf.secCost[s] = v
 		}
 		costs = append(costs, inf)
@@ -245,7 +252,7 @@ func printCosts(deltasBySec map[string]*SecurityDeltas, full bool, csvOutDir str
 			cur = costinfo{}
 		}
 		dirty = true
-		if cur.total < c.total {
+		if cur.total.LessThan(c.total) {
 			cur = c
 		}
 
