@@ -28,6 +28,7 @@ to be output to stderr.
 
 import os
 import subprocess
+from sys import stderr
 import warnings
 
 import pytest
@@ -62,7 +63,9 @@ def get_test_dirs():
             else:
                dir_paths.append(pretty_test_dir_path)
 
-   if not dir_paths:
+   if not existing_base_dirs:
+      warnings.warn(f"Found no test directories, looked for {base_dirs}")
+   elif not dir_paths:
       warnings.warn(f"Found test directories {existing_base_dirs}, but no test case sub-directories")
    if disabled_test_dirs:
       warnings.warn(f"Found disabled test directories {disabled_test_dirs}")
@@ -73,11 +76,9 @@ def test_dir_presence():
    """Sanity check (warn) if the expected test directories have not been
    created, since they are local to the machine.
    """
-   absent_dirs = get_base_dirs(existing=False)
-   if absent_dirs:
-      warnings.warn(f"Expected test directories {absent_dirs} not found.")
+   assert get_base_dirs(existing=True), "No test dirs found to run against"
 
-def run(options: list[str]):
+def run(options: list[str]) -> subprocess.CompletedProcess:
    cmd = [script_path] + options
    return subprocess.run(cmd, capture_output=True)
 
@@ -96,7 +97,7 @@ def test_script(test_dir):
       with open(output_path) as f:
          exp_output = f.read()
 
-   exp_err = None
+   exp_err = ""
    err_path = os.path.join(full_test_dir_path, 'expected_error.txt')
    if os.path.exists(err_path):
       with open(err_path) as f:
@@ -105,5 +106,5 @@ def test_script(test_dir):
    ret = run(pdfs)
    if exp_output is not None or exp_err is None:
       assert unify_newlines(ret.stdout.decode()) == unify_newlines(exp_output)
-   if exp_err is not None or exp_output is None:
-      assert unify_newlines(ret.stderr.decode()) == unify_newlines(exp_err)
+
+   assert unify_newlines(ret.stderr.decode()) == unify_newlines(exp_err)
