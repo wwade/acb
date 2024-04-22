@@ -12,27 +12,31 @@ from csv import reader
 
 DATE_FMT = "%Y-%m-%d"
 
-CONVERTER = Callable[ [ str ], Tuple[Any, str] ]
+CONVERTER = Callable[[str], Tuple[Any, str]]
+
 
 def maybe_number(val: str) -> Tuple[Union[int, str], str]:
     if val.isnumeric():
         return int(val), ""
     return val, ""
-    
+
+
 def convert_date(val: str) -> Tuple[Union[datetime, str], str]:
     try:
         return datetime.strptime(val, DATE_FMT), "yyyy-mm-dd"
     except ValueError:
         return val, ""
 
-def get_converter(header: List[str]) -> List[ CONVERTER ]:
-    converter: List[ CONVERTER ] = []
+
+def get_converter(header: List[str]) -> List[CONVERTER]:
+    converter: List[CONVERTER] = []
     for col in header:
-        if col.lower().endswith('date'):
+        if col.lower().endswith("date"):
             converter.append(convert_date)
         else:
             converter.append(maybe_number)
     return converter
+
 
 def handle_file(wb: openpyxl.Workbook, name: str, sheet_num: int):
     header = None
@@ -61,7 +65,8 @@ def handle_file(wb: openpyxl.Workbook, name: str, sheet_num: int):
                     cells.append(c)
                 sheet.append(cells)
         for rowNum in range(row_num):
-            sheet.row_dimensions[rowNum+1].height = 60
+            sheet.row_dimensions[rowNum + 1].height = 60
+
 
 def main():
     files = sys.argv[1:]
@@ -70,9 +75,9 @@ def main():
 
     wb = openpyxl.Workbook(write_only=True)
     for idx, fn in enumerate(sys.argv[1:]):
-        handle_file(wb, fn, idx+1)
+        handle_file(wb, fn, idx + 1)
     wb.save("out.xlsx")
-            
-    
+
+
 if __name__ == "__main__":
     main()

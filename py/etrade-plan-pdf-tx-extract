@@ -19,7 +19,6 @@ import sys
 from typing import Any, Optional, Union
 from txlib import AcbCsvRenderer, Action, Tx
 
-from prettytable import PrettyTable
 import PyPDF2
 
 _debug = False
@@ -82,7 +81,7 @@ class TradeConfirmation:
    tx_date: datetime.date
    settle_date: datetime.date
    shares: int
-   amount_per_share: float # "price"
+   amount_per_share: float
    commission: float
    fee: float
    filename: str
@@ -352,7 +351,6 @@ def text_to_eso_entries(text: str, filename: str) -> list[BenefitEntry]:
          ent.sell_to_cover_fee = _sum(fees)
       entries.append(ent)
 
-
    return entries
 
 def text_to_espp_data(text) -> dict:
@@ -563,7 +561,8 @@ def find_and_apply_sell_to_cover_trade_set(benefit: BenefitEntry, trade_confs: l
       return matching_trades
    else:
       fn = f"{basename(benefit.filename)}: " if benefit.filename else ""
-      print(f"Error: Found no trades matching the sell-to-cover for {fn}{benefit.plan_note} {benefit.acquire_tx_date}", file=sys.stderr)
+      print("Error: Found no trades matching the sell-to-cover for "
+            f"{fn}{benefit.plan_note} {benefit.acquire_tx_date}", file=sys.stderr)
       fdebug("Candidates:")
       for t in trade_confs:
          ppdebug(t)
@@ -634,16 +633,16 @@ Run this script, giving the name of all PDFs as arguments.""",
             return 1
 
    if args.extract_only:
-      for desc, c in (
+      for desc, collection in (
             ("trades", trade_confs),
             ("benefits", benefits),
       ):
          header: Optional[list[str]] = None
          rows: list[list[str]] = []
-         for t in c:
+         for entry in collection:
             if header is None:
-               header = list(t.__match_args__)
-            rows.append([getattr(t, k) for k in header])
+               header = list(entry.__match_args__)
+            rows.append([getattr(entry, k) for k in header])
          if header is None:
             print("WARN: No", desc, "entries", file=sys.stderr)
             continue
@@ -652,10 +651,6 @@ Run this script, giving the name of all PDFs as arguments.""",
          writer.writerow(header)
          for row in rows:
             writer.writerow(row)
-
-         tbl = PrettyTable( header )
-         tbl.add_rows(rows)
-         print(tbl)
       return
 
    remaining_trades = amend_benefit_sales(benefits, trade_confs)

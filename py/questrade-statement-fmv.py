@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import io
-from pprint import pprint
 import re
 import sys
 from abc import ABC, abstractmethod
@@ -149,7 +148,9 @@ def parse_pdf(fp: io.BufferedReader) -> tuple[list[FMV], str]:
     for page in reader.pages:
         text = page.extract_text()
         if "current month" in text.lower():
-            if m := re.search(r"\bCurrent month:\s+(?P<month>\S+ \d+, \d+)\n", text, re.IGNORECASE):
+            if m := re.search(
+                r"\bCurrent month:\s+(?P<month>\S+ \d+, \d+)\n", text, re.IGNORECASE
+            ):
                 month = m.group("month")
         if "Securities Owned\nCombined in (CAD)" not in text:
             continue
@@ -210,7 +211,7 @@ def main() -> None:
         row = [month, total]
         for sec in sorted(securities):
             if sec not in secmap:
-                row.append( "-" )
+                row.append("-")
                 continue
             fmv = secmap[sec]
             row.append(fmv.fmv)
