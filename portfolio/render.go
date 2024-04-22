@@ -3,10 +3,15 @@ package portfolio
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
+	"github.com/tsiemens/acb/date"
 	decimal_opt "github.com/tsiemens/acb/decimal_value"
 	"github.com/tsiemens/acb/util"
 )
@@ -27,11 +32,32 @@ func NaNString() string {
 	return "NaN"
 }
 
+func humanizeDecimalStr(val string) string {
+	if os.Getenv("HUMANIZE") == "" {
+		return val
+	}
+	negative := ""
+	if strings.HasPrefix(val, "-") {
+		negative, val = val[:1], val[1:]
+	}
+	before, after, found := strings.Cut(val, ".")
+	suffix := ""
+	if found {
+		suffix = fmt.Sprintf(".%s", after)
+	}
+	i, err := strconv.ParseInt(before, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	p := message.NewPrinter(language.English)
+	return p.Sprintf("%s%d%s", negative, i, suffix)
+}
+
 func (h _PrintHelper) CurrStr(val decimal.Decimal) string {
 	if h.PrintAllDecimals {
 		return val.String()
 	}
-	return val.StringFixed(2)
+	return humanizeDecimalStr(val.StringFixed(2))
 }
 
 func (h _PrintHelper) OptCurrStr(val decimal_opt.DecimalOpt) string {
@@ -82,6 +108,11 @@ type RenderTable struct {
 	Footer []string
 	Notes  []string
 	Errors []error
+}
+
+type CostsTables struct {
+	Total  *RenderTable
+	Yearly *RenderTable
 }
 
 func RenderTxTableModel(
@@ -217,4 +248,100 @@ func RenderAggregateCapitalGains(
 		[]string{"Since inception", ph.PlusMinusDollar(gains.CapitalGainsTotal, false)})
 
 	return table
+}
+
+func RenderTotalCosts(allDeltas []*TxDelta, renderFullDollarValues bool) *CostsTables {
+	ph := _PrintHelper{PrintAllDecimals: renderFullDollarValues}
+
+	curCost := map[string]decimal_opt.DecimalOpt{}
+	type costinfo struct {
+		date    date.Date
+		total   decimal_opt.DecimalOpt
+		secCost map[string]decimal_opt.DecimalOpt
+	}
+	var costs []costinfo
+	sort.Slice(allDeltas, func(i, j int) bool {
+		return allDeltas[i].Tx.SettlementDate.Before(allDeltas[j].Tx.SettlementDate)
+	})
+	for _, d := range allDeltas {
+		curCost[d.PostStatus.Security] = d.PostStatus.TotalAcb
+		inf := costinfo{
+			date:    d.Tx.SettlementDate,
+			total:   decimal_opt.Zero,
+			secCost: map[string]decimal_opt.DecimalOpt{},
+		}
+		for s, v := range curCost {
+			inf.total = inf.total.Add(v)
+			inf.secCost[s] = v
+		}
+		costs = append(costs, inf)
+	}
+
+	keys := make([]string, 0, len(curCost))
+	for k := range curCost {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+
+	if len(costs) == 0 {
+		return nil
+	}
+
+	total := &RenderTable{
+		Header: append([]string{"Date", "Total"}, keys...),
+	}
+	for _, c := range costs {
+		var ind []string
+		for _, sec := range keys {
+			ind = append(ind, ph.DollarStr(c.secCost[sec]))
+		}
+		total.Rows = append(total.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
+	}
+
+	yearMax := map[int]costinfo{}
+	year := costs[0].date.Year()
+	var years []int
+	var cur costinfo
+	dirty := false
+	for _, c := range costs {
+		if year != c.date.Year() {
+			if dirty {
+				yearMax[year] = cur
+				years = append(years, year)
+			}
+			year = c.date.Year()
+			cur = costinfo{}
+		}
+		dirty = true
+		if cur.total.LessThan(c.total) {
+			cur = c
+		}
+
+	}
+	if dirty {
+		yearMax[year] = cur
+		years = append(years, year)
+	}
+
+	yearly := &RenderTable{
+		Header: append([]string{"Year", "Date", "Total"}, keys...),
+	}
+	for _, year := range years {
+		c := yearMax[year]
+		var ind []string
+		for _, sec := range keys {
+			ind = append(ind, ph.DollarStr(c.secCost[sec]))
+		}
+		yearly.Rows = append(yearly.Rows,
+			append([]string{
+				fmt.Sprint(year),
+				c.date.String(),
+				ph.DollarStr(c.total),
+			}, ind...),
+		)
+	}
+
+	return &CostsTables{Total: total, Yearly: yearly}
 }

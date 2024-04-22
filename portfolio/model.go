@@ -237,6 +237,7 @@ type TxDelta struct {
 	PreStatus   *PortfolioSecurityStatus
 	PostStatus  *PortfolioSecurityStatus
 	CapitalGain decimal_opt.DecimalOpt
+	GrossIncome decimal.Decimal
 
 	SuperficialLoss decimal_opt.DecimalOpt
 	// A ratio, representing <N reacquired shares which suffered SFL> / <N sold shares>

@@ -377,6 +377,7 @@ func AddTx(
 	newAllAffiliatesShareBalance := preTxStatus.AllAffiliatesShareBalance
 	registered := tx.Affiliate != nil && tx.Affiliate.Registered()
 	var newAcbTotal decimal_opt.DecimalOpt = preTxStatus.TotalAcb
+	var grossIncome decimal.Decimal
 	var capitalGains decimal_opt.DecimalOpt = util.Tern[decimal_opt.DecimalOpt](registered, decimal_opt.Null, decimal_opt.Zero)
 	var superficialLoss decimal_opt.DecimalOpt = util.Tern[decimal_opt.DecimalOpt](registered, decimal_opt.Null, decimal_opt.Zero)
 	superficialLossRatio := util.DecimalRatio{}
@@ -416,9 +417,10 @@ func AddTx(
 		// Note commission plays no effect on sell order ACB
 		newAcbTotal = preTxStatus.TotalAcb.Sub(preTxStatus.PerShareAcb().MulD(tx.Shares))
 		totalPayout := totalLocalSharePrice.Sub(tx.Commission.Mul(tx.CommissionCurrToLocalExchangeRate))
+		grossIncome = totalPayout
 		capitalGains = decimal_opt.New(totalPayout).Sub(preTxStatus.PerShareAcb().MulD(tx.Shares))
-		log.Tracef(traceTag, "AddTx newAcbTotal: %v, totalPayout: %v, capGain (pre registered loss adjust): %v",
-			newAcbTotal, totalPayout, capitalGains)
+		log.Tracef(traceTag, "AddTx newAcbTotal: %v, totalPayout: %v, capGain (pre registered loss adjust): %v, grossIncome: %v",
+			newAcbTotal, totalPayout, capitalGains, grossIncome)
 
 		if !registered && capitalGains.IsNegative() {
 			sflRatioResult := getSuperficialLossRatio(idx, txs, ptfStatuses)
@@ -535,6 +537,7 @@ func AddTx(
 		PreStatus:                 preTxStatus,
 		PostStatus:                newStatus,
 		CapitalGain:               capitalGains,
+		GrossIncome:               grossIncome,
 		SuperficialLoss:           superficialLoss,
 		SuperficialLossRatio:      superficialLossRatio,
 		PotentiallyOverAppliedSfl: potentiallyOverAppliedSfl,
