@@ -183,7 +183,15 @@ func RunAcbAppToRenderModel(
 
 	var allDeltas []*ptf.TxDelta
 	secModels := make(map[string]*ptf.RenderTable)
-	for sec, deltas := range deltasBySec {
+
+	securities := make([]string, 0, len(deltasBySec))
+	for k := range deltasBySec {
+		securities = append(securities, k)
+	}
+	sort.Strings(securities)
+
+	for _, sec := range securities {
+		deltas := deltasBySec[sec]
 		allDeltas = append(allDeltas, deltas.Deltas...)
 		tableModel := ptf.RenderTxTableModel(
 			deltas.Deltas, gains.SecurityGains[sec], renderFullDollarValues)

@@ -31,7 +31,7 @@ func CalcSecurityCumulativeCapitalGains(deltas []*TxDelta) *CumulativeCapitalGai
 	capGainsYearTotals := util.NewDefaultMap(
 		func(_ int) decimal_opt.DecimalOpt { return decimal_opt.Zero })
 	var grossIncomeTotal decimal.Decimal
-	grossIncomeYearTotals := util.NewDefaultMap[int, decimal.Decimal](
+	grossIncomeYearTotals := util.NewDefaultMap(
 		func(_ int) decimal.Decimal { return decimal.Zero })
 
 	for _, d := range deltas {
@@ -59,7 +59,7 @@ func CalcCumulativeCapitalGains(secGains map[string]*CumulativeCapitalGains) *Cu
 	capGainsYearTotals := util.NewDefaultMap(
 		func(_ int) decimal_opt.DecimalOpt { return decimal_opt.Zero })
 	var grossIncomeTotal decimal.Decimal
-	grossIncomeYearTotals := util.NewDefaultMap[int, decimal.Decimal](
+	grossIncomeYearTotals := util.NewDefaultMap(
 		func(_ int) decimal.Decimal { return decimal.Zero })
 
 	for _, gains := range secGains {
