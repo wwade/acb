@@ -188,7 +188,7 @@ func RunAcbAppToRenderModel(
 	for k := range deltasBySec {
 		securities = append(securities, k)
 	}
-	sort.Strings(securities)
+	// sort.Strings(securities)
 
 	for _, sec := range securities {
 		deltas := deltasBySec[sec]

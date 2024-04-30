@@ -2,6 +2,7 @@ package portfolio
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -260,10 +261,17 @@ func RenderTotalCosts(allDeltas []*TxDelta, renderFullDollarValues bool) *CostsT
 		secCost map[string]decimal_opt.DecimalOpt
 	}
 	var costs []costinfo
-	sort.Slice(allDeltas, func(i, j int) bool {
-		return allDeltas[i].Tx.SettlementDate.Before(allDeltas[j].Tx.SettlementDate)
+	sort.SliceStable(allDeltas, func(i, j int) bool {
+		txi, txj := allDeltas[i].Tx, allDeltas[j].Tx
+		if !txi.SettlementDate.Equal(txj.SettlementDate) {
+			return txi.SettlementDate.Before(txj.SettlementDate)
+		}
+		return false
+
+		// return txi.Security < txj.Security
 	})
 	for _, d := range allDeltas {
+		log.Println(d)
 		curCost[d.PostStatus.Security] = d.PostStatus.TotalAcb
 		inf := costinfo{
 			date:    d.Tx.SettlementDate,
@@ -277,24 +285,22 @@ func RenderTotalCosts(allDeltas []*TxDelta, renderFullDollarValues bool) *CostsT
 		costs = append(costs, inf)
 	}
 
-	keys := make([]string, 0, len(curCost))
-	for k := range curCost {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return keys[i] < keys[j]
-	})
-
 	if len(costs) == 0 {
 		return nil
 	}
 
+	securities := make([]string, 0, len(curCost))
+	for k := range curCost {
+		securities = append(securities, k)
+	}
+	sort.Strings(securities)
+
 	total := &RenderTable{
-		Header: append([]string{"Date", "Total"}, keys...),
+		Header: append([]string{"Date", "Total"}, securities...),
 	}
 	for _, c := range costs {
 		var ind []string
-		for _, sec := range keys {
+		for _, sec := range securities {
 			ind = append(ind, ph.DollarStr(c.secCost[sec]))
 		}
 		total.Rows = append(total.Rows, append([]string{c.date.String(), ph.DollarStr(c.total)}, ind...))
@@ -326,12 +332,12 @@ func RenderTotalCosts(allDeltas []*TxDelta, renderFullDollarValues bool) *CostsT
 	}
 
 	yearly := &RenderTable{
-		Header: append([]string{"Year", "Date", "Total"}, keys...),
+		Header: append([]string{"Year", "Date", "Total"}, securities...),
 	}
 	for _, year := range years {
 		c := yearMax[year]
 		var ind []string
-		for _, sec := range keys {
+		for _, sec := range securities {
 			ind = append(ind, ph.DollarStr(c.secCost[sec]))
 		}
 		yearly.Rows = append(yearly.Rows,

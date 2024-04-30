@@ -5,34 +5,41 @@ import (
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tsiemens/acb/date"
 	decimal_opt "github.com/tsiemens/acb/decimal_value"
 )
 
 func TestCalcSecurityCumulativeCapitalGains(t *testing.T) {
-	var day uint32
-	getTx := func(year uint32) *Tx {
-		day += 1
+	getTx := func(sec, ymd string) *Tx {
+		dateVal, err := date.Parse("2006-01-02", ymd)
+		require.NoError(t, err)
 		return &Tx{
-			Security:       "VXUS",
-			SettlementDate: date.New(year, 1, day),
+			Security:       sec,
+			SettlementDate: dateVal,
 		}
 	}
-	getDelta := func(year uint32, capGain, gross float64) *TxDelta {
+	type txInfo struct {
+		sec         string
+		ymd         string
+		capGain     float64
+		grossIncome float64
+	}
+	getDelta := func(spec txInfo) *TxDelta {
 		return &TxDelta{
-			Tx:          getTx(year),
-			CapitalGain: decimal_opt.NewFromFloat(capGain),
-			GrossIncome: decimal.NewFromFloat(gross),
+			Tx:          getTx(spec.sec, spec.ymd),
+			CapitalGain: decimal_opt.NewFromFloat(spec.capGain),
+			GrossIncome: decimal.NewFromFloat(spec.grossIncome),
 		}
 	}
 
 	deltas := []*TxDelta{
-		getDelta(2015, 100, 20),
-		getDelta(2015, 50, 10),
-		getDelta(2015, 20, 5),
-		getDelta(2016, 200, 30),
-		getDelta(2016, 250, 40),
-		getDelta(2016, 300, 50),
+		getDelta(txInfo{sec: "VXUS", ymd: "2015-01-13", capGain: 50, grossIncome: 10}),
+		getDelta(txInfo{sec: "MRNA", ymd: "2015-01-13", capGain: 100, grossIncome: 20}),
+		getDelta(txInfo{sec: "VXUS", ymd: "2015-02-12", capGain: 20, grossIncome: 5}),
+		getDelta(txInfo{sec: "MRNA", ymd: "2016-03-25", capGain: 200, grossIncome: 30}),
+		getDelta(txInfo{sec: "VXUS", ymd: "2016-03-26", capGain: 250, grossIncome: 40}),
+		getDelta(txInfo{sec: "MRNA", ymd: "2016-03-27", capGain: 300, grossIncome: 50}),
 	}
 
 	cc := CalcSecurityCumulativeCapitalGains(deltas)
