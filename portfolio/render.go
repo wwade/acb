@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	"github.com/tsiemens/acb/date"
 	decimal_opt "github.com/tsiemens/acb/decimal_value"
@@ -29,11 +32,32 @@ func NaNString() string {
 	return "NaN"
 }
 
+func humanizeDecimalStr(val string) string {
+	if os.Getenv("HUMANIZE") == "" {
+		return val
+	}
+	negative := ""
+	if strings.HasPrefix(val, "-") {
+		negative, val = val[:1], val[1:]
+	}
+	before, after, found := strings.Cut(val, ".")
+	suffix := ""
+	if found {
+		suffix = fmt.Sprintf(".%s", after)
+	}
+	i, err := strconv.ParseInt(before, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	p := message.NewPrinter(language.English)
+	return p.Sprintf("%s%d%s", negative, i, suffix)
+}
+
 func (h _PrintHelper) CurrStr(val decimal.Decimal) string {
 	if h.PrintAllDecimals {
 		return val.String()
 	}
-	return val.StringFixed(2)
+	return humanizeDecimalStr(val.StringFixed(2))
 }
 
 func (h _PrintHelper) OptCurrStr(val decimal_opt.DecimalOpt) string {
